@@ -1,0 +1,15 @@
+[versions]
+quarkus = "3.27.1"
+junit = "5.11.4"
+sqlite = "3.49.1.0"
+[libraries]
+quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+quarkus-rest-jackson = { module = "io.quarkus:quarkus-rest-jackson" }
+quarkus-vertx = { module = "io.quarkus:quarkus-vertx" }
+quarkus-arc = { module = "io.quarkus:quarkus-arc" }
+quarkus-junit5 = { module = "io.quarkus:quarkus-junit5" }
+rest-assured = { module = "io.rest-assured:rest-assured" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+[plugins]
+quarkus = { id = "io.quarkus", version.ref = "quarkus" }
