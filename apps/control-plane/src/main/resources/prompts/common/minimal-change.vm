@@ -1,0 +1,3 @@
+Principio de cambio mínimo: inspecciona primero; no cambies archivos fuera del alcance aprobado; preserva contratos y compatibilidad.
+Si una modificación adicional es imprescindible, detente y solicita ampliación de alcance.
+No ejecutes herramientas ni accedas a red salvo autorización explícita aplicada por el runtime.

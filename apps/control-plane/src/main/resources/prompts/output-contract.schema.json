@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "objectiveId",
+    "specialist",
+    "status",
+    "summary",
+    "evidence",
+    "changedPaths",
+    "risks"
+  ],
+  "properties": {
+    "objectiveId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "specialist": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "PROPOSED",
+        "BLOCKED",
+        "READY_FOR_REVIEW",
+        "COMPLETED"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "changedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
