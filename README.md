@@ -1,65 +1,57 @@
-# AI Engineering Station
+# AIES v0.4 — Herramientas locales de navegador y diagramas
 
-Estación de desarrollo multiagente con IA local y herramientas gratuitas, optimizada para Linux, con memoria persistente, automatización y observabilidad.
+Parche **aditivo**: no sustituye clases Java ni modifica Gradle/Quarkus. Se puede extraer sobre el repositorio existente. No requiere cuentas ni servicios pagados.
 
-> **Estado:** Fase 01 — esqueleto funcional de orquestación. **Todavía NO incluye agentes de IA, modelos, RAG, sandbox ni seguridad de producción.**
-
-## Arquitectura
-
-- `modules/domain`: entidades y reglas puras.
-- `modules/orchestration`: puertos y casos de uso independientes de frameworks.
-- `adapters/sqlite`: persistencia de tareas en SQLite.
-- `apps/control-plane`: Quarkus REST, Vert.x Event Bus y reconciliador periódico.
-- `docs/`: ADR y límites explícitos.
-
-## Requisitos
-
-- Fedora (o Linux), JDK 21, `curl` y `unzip`.
-- Conexión a internet inicial para descargar Gradle y dependencias Maven.
-- Gradle 8.14.3, Quarkus 3.27.1 (versiones iniciales para validar; no se afirma compatibilidad con Java 25).
-
-## Preparación en Fedora
+## Instalar en Fedora
 
 ```bash
-sudo dnf install -y java-21-openjdk-devel curl unzip git
-./scripts/fedora-check.sh
-./scripts/bootstrap-gradle.sh
-./gradlew test
+cd ~/git/ai-engineering-station
+unzip -o ~/Descargas/ai-engineering-station-v0.4-tools.zip -d .
+bash scripts/setup-fedora.sh
 ```
 
-**Nota:** El ZIP no incluye `gradle-wrapper.jar` oficial porque no estaba disponible en el entorno de generación. El script `bootstrap-gradle.sh` descarga Gradle 8.14.3 desde `services.gradle.org` y genera el wrapper oficial con la tarea `wrapper`. Antes de usar el proyecto en CI público, versiona `gradle/wrapper/gradle-wrapper.jar` y configura verificación de checksums de la distribución. El primer bootstrap exige conexión de red.
+**Nota:** el instalador de Fedora puede requerir ajustar paquetes a tu versión; si `plantuml` no está disponible por DNF, instala PlantUML desde su distribución oficial o usa el paquete disponible en tus repositorios. El navegador Chromium de Playwright puede requerir bibliotecas adicionales. El script instala dependencias Python en `.aies/venv`, no en el Python del sistema.
 
-## Iniciar el servicio
+## Primera prueba: diagrama
 
 ```bash
-./gradlew :apps:control-plane:quarkusDev
+AIES_WORKSPACE="$PWD" .aies/venv/bin/python tools/aies_tools.py diagram \
+  --source examples/architecture.puml --output .aies/artifacts/architecture.svg
 ```
 
-En otra terminal:
+Abre `.aies/artifacts/architecture.svg` con tu navegador o visor de imágenes.
+
+## Segunda prueba: navegador y UX
+
+Arranca una aplicación web de prueba en localhost (por ejemplo `python3 -m http.server 8765` en una carpeta con HTML). En otra terminal:
 
 ```bash
-curl -i -X POST http://127.0.0.1:8080/api/v1/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"objective":"Preparar una propuesta de arquitectura"}'
-
-# Sustituir UUID por el identificador devuelto:
-curl http://127.0.0.1:8080/api/v1/tasks/UUID
+AIES_WORKSPACE="$PWD" .aies/venv/bin/python tools/aies_tools.py browser \
+  --url http://127.0.0.1:8765 --output .aies/artifacts/home.png
 ```
 
-La tarea se guarda en SQLite, se notifica por Vert.x Event Bus y el consumidor **simulado** la marca COMPLETED. Si se pierde la notificación, un reconciliador revisa las tareas pendientes cada 3 segundos. **COMPLETED no significa que un agente haya implementado nada** en esta fase.
+Devuelve JSON con título, encabezados, botones, imágenes sin atributo alt, desbordamiento horizontal y ruta de la captura. Es una **inspección automatizada básica**, no una evaluación visual completa ni una auditoría de accesibilidad WCAG.
 
-## Próximas fases
+## Pruebas de política
 
-1. Leases, outbox, checkpoints, idempotencia y pruebas de fallos.
-2. Adaptador de inferencia llama.cpp Vulkan y Model Router.
-3. Agentes Planner/Architect/Developer/QA, Git worktrees y Podman rootless.
-4. Memoria por proyecto, RAG y skills.
-5. Observabilidad OpenTelemetry y dashboard.
+```bash
+AIES_WORKSPACE="$PWD" python3 -m unittest discover -s tests -p 'test_policy.py' -v
+```
 
-## Seguridad
+## Limitaciones importantes
 
-API únicamente en `127.0.0.1`. No exponer a redes externas; no tiene autenticación. No se ejecutan comandos generados por IA. No guardar secretos en Git.
+- **No existe todavía un ciclo autónomo de llamadas a herramientas desde Qwen**. En v0.4 las herramientas se invocan manualmente. El contrato de integración propuesto para Quarkus está en `docs/NEXT-QUARKUS-INTEGRATION.md`.
+- El navegador solo permite `localhost`, `127.0.0.1` y `::1`. Bloquea peticiones externas, pero **no es un sandbox de seguridad fuerte** frente a páginas maliciosas, procesos locales hostiles o JavaScript que acceda a servicios locales. Úsalo con aplicaciones propias y sin datos sensibles.
+- PlantUML se limita a archivos `.puml` locales, y bloquea varias directivas; **no constituye aislamiento completo** para diagramas no confiables. Se recomienda contenedor sin red y permisos limitados antes de aceptar contenido generado automáticamente.
+- Las capturas se guardan en `.aies/artifacts/`. No se realiza análisis visual con un modelo multimodal todavía.
+- No se genera arte ilustrativo con un modelo de difusión: PlantUML genera diagramas, no imágenes artísticas.
+- Evita ejecutar Playwright sobre la misma sesión que contiene credenciales o perfiles personales.
 
-## Licencia
+## Git
 
-No se incluye licencia; el propietario del repositorio debe escogerla expresamente.
+Agrega al `.gitignore` del proyecto:
+
+```
+.aies/venv/
+.aies/artifacts/
+```
