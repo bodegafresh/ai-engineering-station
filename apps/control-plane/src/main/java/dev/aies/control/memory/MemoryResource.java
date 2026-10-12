@@ -2,30 +2,23 @@ package dev.aies.control.memory;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.BadRequestException;
-import jakarta.ws.rs.NotFoundException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.file.Files;
+import java.util.Optional;
+import io.smallrye.common.annotation.Blocking;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Optional;
 
 /** Explicitly opt-in local memory API; never open without a dedicated secret. */
 @Path("/api/v1/memory")
 @ApplicationScoped
+@Blocking
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class MemoryResource {
@@ -39,16 +32,10 @@ public class MemoryResource {
     public record SearchResult(List<SqliteProjectMemory.Entry> entries, MemoryContextBudget.Selection context) {}
 
     private void authorize(String provided) {
-        String expectedToken = token.orElse("");
-
-        if (!enabled
-                || expectedToken.length() < 32
-                || provided == null
-                || !MessageDigest.isEqual(
-                        expectedToken.getBytes(StandardCharsets.UTF_8),
-                        provided.getBytes(StandardCharsets.UTF_8))) {
+        String expected = token.orElse("");
+        if (!enabled || expected.length() < 32 || provided == null ||
+                !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), provided.getBytes(StandardCharsets.UTF_8)))
             throw new NotFoundException();
-        }
     }
     private SqliteProjectMemory store() throws Exception {
         if (store == null) synchronized (this) {

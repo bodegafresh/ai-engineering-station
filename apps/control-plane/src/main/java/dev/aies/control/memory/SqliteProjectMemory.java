@@ -21,10 +21,7 @@ public final class SqliteProjectMemory implements AutoCloseable {
         try {
             Class.forName("org.sqlite.JDBC");
         } catch (ClassNotFoundException e) {
-            throw new SQLException(
-                "No se encontró el driver JDBC de SQLite en el classpath",
-                e
-            );
+            throw new SQLException("SQLite JDBC driver not on runtime classpath", e);
         }
         db = DriverManager.getConnection("jdbc:sqlite:" + path.toAbsolutePath());
         try (Statement s = db.createStatement()) {
