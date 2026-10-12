@@ -10,9 +10,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** The event bus is a wake-up signal; SQLite remains authoritative. */
+/** Single-node durable scheduler. Never runs model HTTP on an event-loop thread. */
 @Startup
 @ApplicationScoped
 public class TaskRuntime {
@@ -20,39 +21,102 @@ public class TaskRuntime {
     private final SqliteTaskRepository repository;
     private final TaskService service;
     private final Vertx vertx;
+    private final LocalModelClient model;
     private final long timerId;
-    private final AtomicBoolean busy=new AtomicBoolean();
-    public TaskRuntime(Vertx vertx,@ConfigProperty(name="aies.data.dir",defaultValue="./data") String dataDir) throws Exception {
-        this.vertx=vertx;
+    private final AtomicBoolean polling=new AtomicBoolean(false);
+    private final int maxAttempts;
+    private final Duration lease;
+    private final boolean enabled;
+
+    public TaskRuntime(Vertx vertx, LocalModelClient model,
+       @ConfigProperty(name="aies.data.dir",defaultValue="./data") String dataDir,
+       @ConfigProperty(name="aies.scheduler.max-attempts",defaultValue="3") int maxAttempts,
+       @ConfigProperty(name="aies.scheduler.lease-seconds",defaultValue="180") long leaseSeconds,
+       @ConfigProperty(name="aies.model.timeout-seconds",defaultValue="90") long modelTimeoutSeconds,
+       @ConfigProperty(name="aies.model.enabled",defaultValue="false") boolean enabled) throws Exception {
+        if(leaseSeconds<=modelTimeoutSeconds+10) throw new IllegalArgumentException("Lease must exceed model timeout by >10 seconds");
+        this.vertx=vertx;this.model=model;this.maxAttempts=maxAttempts;
+        this.lease=Duration.ofSeconds(leaseSeconds);this.enabled=enabled;
         Files.createDirectories(Path.of(dataDir));
         repository=new SqliteTaskRepository(Path.of(dataDir,"tasks.db").toAbsolutePath().toString());
         service=new TaskService(repository);
-        vertx.eventBus().<String>consumer("task.wakeup", ignored -> schedule());
-        timerId=vertx.getDelegate().setPeriodic(1000, ignored -> schedule());
-        schedule();
+        vertx.eventBus().consumer("task.wakeup",msg->schedulePoll());
+        timerId=vertx.getDelegate().setPeriodic(2000,ignored->schedulePoll());
+        schedulePoll();
+        LOG.infof("Local model execution %s",enabled?"ENABLED":"DISABLED (tasks remain pending)");
     }
-    public TaskService service(){return service;}
-    public void wakeup(){vertx.eventBus().publish("task.wakeup","new-task");}
-    private void schedule(){
-        if(!busy.compareAndSet(false,true))return;
-        vertx.getDelegate().executeBlocking(() -> {
+    public TaskService service() { return service; }
+    public SqliteTaskRepository repository() { return repository; }
+    
+    private void schedulePoll() {
+        if (!polling.compareAndSet(false, true)) {
+            return;
+        }
+
+        Thread.startVirtualThread(() -> {
             try {
-                repository.recoverExpired();
-                // POC handler: real agents will replace this no-op completion step.
-                for(int i=0;i<10;i++) {
-                    var task=repository.claimNext(30);
-                    if(task.isEmpty())break;
-                    try { repository.complete(task.get().id()); }
-                    catch(Exception e) { repository.failOrRetry(task.get().id(),e.toString(),3,2); }
+                repository.recoverExpired(maxAttempts);
+
+                repository.publishOutbox(
+                    (type, payload) ->
+                        vertx.eventBus().publish(
+                            "aies.events", type + ":" + payload
+                        ),
+                    50
+                );
+
+                if (!enabled) {
+                    return;
                 }
-                for(var event:repository.pendingEvents(50)) {
-                    vertx.eventBus().publish("task.events",event.type()+":"+event.taskId());
-                    repository.acknowledgeEvent(event.id());
+
+                var claim = repository.claimNext(lease, maxAttempts);
+
+                if (claim.isEmpty()) {
+                    return;
                 }
-            }catch(Exception e){LOG.error("Task reconciliation failed",e);}
-            finally{busy.set(false);}
-            return null;
-        },false);
+
+                var work = claim.get();
+
+                try {
+                    LOG.infof("Executing task %s", work.task().id());
+
+                    var response = model.complete(
+                        work.task().objective()
+                    );
+
+                    if (!repository.completeWithResult(
+                            work,
+                            response.content(),
+                            response.model()
+                    )) {
+                        LOG.warnf(
+                            "Stale result discarded for task %s",
+                            work.task().id()
+                        );
+                    }
+
+                } catch (Exception e) {
+                    LOG.warnf(
+                        e,
+                        "Model attempt %d failed for task %s",
+                        work.attempt(),
+                        work.task().id()
+                    );
+
+                    repository.fail(
+                        work,
+                        e.getClass().getSimpleName()
+                            + ": " + e.getMessage()
+                    );
+                }
+
+            } catch (Exception e) {
+                LOG.error("Scheduler iteration failed", e);
+            } finally {
+                polling.set(false);
+            }
+        });
     }
-    @PreDestroy void close(){vertx.getDelegate().cancelTimer(timerId);}
+
+    @PreDestroy void close() { vertx.getDelegate().cancelTimer(timerId); }
 }

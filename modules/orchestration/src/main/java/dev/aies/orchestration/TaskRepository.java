@@ -1,19 +1,21 @@
 package dev.aies.orchestration;
 import dev.aies.domain.Task;
-import java.util.List;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 public interface TaskRepository {
     Task create(String objective);
     Optional<Task> find(UUID id);
+    /** Cancel a pending task atomically; running tasks require cooperative cancellation. */
     boolean cancel(UUID id);
-    /** Claim one ready task using an atomic SQLite write transaction. */
-    Optional<Task> claimNext(int leaseSeconds);
-    boolean complete(UUID id);
-    boolean failOrRetry(UUID id, String reason, int maxAttempts, int backoffSeconds);
-    int recoverExpired();
-    /** Atomically claim unpublished outbox records; caller must acknowledge successful delivery. */
-    List<OutboxEvent> pendingEvents(int limit);
-    void acknowledgeEvent(long eventId);
-    record OutboxEvent(long id, UUID taskId, String type) {}
+    Optional<Claim> claimNext(Duration lease, int maxAttempts);
+    boolean complete(Claim claim);
+    boolean completeWithResult(Claim claim, String result, String model);
+    Optional<TaskResult> findResult(UUID id);
+    record TaskResult(UUID taskId, String model, String response, String completedAt) {}
+    boolean fail(Claim claim, String reason);
+    int recoverExpired(int maxAttempts);
+    int publishOutbox(OutboxPublisher publisher, int limit);
+    record Claim(Task task, String leaseToken, int attempt) {}
+    @FunctionalInterface interface OutboxPublisher { void publish(String type, String payload); }
 }
