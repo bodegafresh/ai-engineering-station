@@ -293,6 +293,81 @@
         "acceptance-reviewer"
       ],
       "maxIterations": 5
+    },
+    {
+      "id": "geography-analyst",
+      "template": "geography-analyst",
+      "capabilities": [
+        "geography",
+        "geospatial-analysis",
+        "regional-markets",
+        "demographics"
+      ],
+      "reviewers": [
+        "market-researcher",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "geopolitical-analyst",
+      "template": "geopolitical-analyst",
+      "capabilities": [
+        "geopolitics",
+        "political-risk",
+        "public-policy",
+        "regulation"
+      ],
+      "reviewers": [
+        "security-engineer",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "economist",
+      "template": "economist",
+      "capabilities": [
+        "economics",
+        "competition",
+        "market-structure",
+        "pricing"
+      ],
+      "reviewers": [
+        "statistician",
+        "finance-analyst"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "market-researcher",
+      "template": "market-researcher",
+      "capabilities": [
+        "market-research",
+        "market-sizing",
+        "customer-discovery",
+        "competitor-analysis"
+      ],
+      "reviewers": [
+        "statistician",
+        "anthropologist"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "growth-strategist",
+      "template": "growth-strategist",
+      "capabilities": [
+        "growth",
+        "monetization",
+        "unit-economics",
+        "go-to-market"
+      ],
+      "reviewers": [
+        "finance-analyst",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
     }
   ]
 }
