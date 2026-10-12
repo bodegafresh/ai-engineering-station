@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.Optional;
 
 /** Explicitly approved, allowlisted tools. Not an autonomous shell. */
 @Path("/api/v1/tools")
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 @Blocking
 public class ToolGatewayResource {
     @ConfigProperty(name="aies.tools.enabled", defaultValue="false") boolean enabled;
-    @ConfigProperty(name="aies.tools.token", defaultValue="") String token;
+    @ConfigProperty(name = "aies.tools.token") Optional<String> configuredToken;
     @ConfigProperty(name="aies.tools.workspace", defaultValue=".") String workspace;
     @ConfigProperty(name="aies.tools.python", defaultValue=".aies/venv/bin/python") String python;
     @Inject ObjectMapper mapper;
@@ -30,6 +31,13 @@ public class ToolGatewayResource {
     @POST @Path("/execute")
     public Response execute(@HeaderParam("X-AIES-Tool-Token") String supplied, ToolRequest req) {
         if (!enabled) return error(403, "tool gateway disabled");
+        String token = configuredToken.orElse("");
+        if (token.length() < 24 || supplied == null ||
+            !java.security.MessageDigest.isEqual(
+                token.getBytes(StandardCharsets.UTF_8),
+                supplied.getBytes(StandardCharsets.UTF_8))) {
+            return error(401, "invalid tool token");
+        }
         if (token == null || token.length() < 24 || supplied == null ||
             !java.security.MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8)))
             return error(401, "invalid tool token");
