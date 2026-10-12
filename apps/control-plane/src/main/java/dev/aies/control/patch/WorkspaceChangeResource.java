@@ -1,13 +1,12 @@
 package dev.aies.control.patch;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aies.control.security.WorkspaceOperatorAuthorizer;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.*;
 
 /** Human-operated workspace change API. Agent output is untrusted and never auto-approved. */
@@ -19,17 +18,12 @@ public class WorkspaceChangeResource {
     public record AgentPrepare(String projectId,String agentOutput) {}
     public record Approval(String fingerprint,String reviewer) {}
     @Inject ObjectMapper mapper;
+    @Inject WorkspaceOperatorAuthorizer authorizer;
     @ConfigProperty(name="aies.workspace-changes.enabled",defaultValue="false") boolean enabled;
-    @ConfigProperty(name="aies.workspace-changes.token") Optional<String> token;
     @ConfigProperty(name="aies.teams.projects-root",defaultValue="./projects") String projectsRoot;
     @ConfigProperty(name="aies.workspace-changes.sessions-root",defaultValue="./data/workspace-sessions") String sessionsRoot;
     private volatile WorkspaceChangeService service;
-    private void authorize(String supplied) {
-        String expected=token.orElse("");
-        if(!enabled || expected.length()<32 || supplied==null ||
-           !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),supplied.getBytes(StandardCharsets.UTF_8)))
-            throw new NotFoundException();
-    }
+    private void authorize(String supplied) { authorizer.authorize(enabled, supplied); }
     private WorkspaceChangeService service() throws Exception {
         if(service==null) synchronized(this) {
             if(service==null) service=new WorkspaceChangeService(java.nio.file.Path.of(projectsRoot),
