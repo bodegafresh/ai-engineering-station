@@ -39,6 +39,7 @@ public final class WorkspaceVerificationService {
             } catch (IllegalArgumentException e) {
                 String message = switch (String.valueOf(e.getMessage())) {
                     case "Gradle wrapper missing" -> "Gradle wrapper missing";
+                    case "Required project manifest missing" -> "Required project manifest missing";
                     case "Unsupported verification profile" -> "Unsupported verification profile";
                     default -> "Verification configuration error";
                 };

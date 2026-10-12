@@ -21,3 +21,22 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# AIES - Proyectos locales administrados
+/projects/
+
+# AIES - Sesiones y evidencia generadas
+/data/workspace-sessions/
+/apps/control-plane/data/workspace-sessions/
+
+# AIES - Bases SQLite y archivos auxiliares
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db-shm
+*.db-wal
+
+# AIES - Configuración local y secretos
+.env
+.env.local
+.env.*.local
