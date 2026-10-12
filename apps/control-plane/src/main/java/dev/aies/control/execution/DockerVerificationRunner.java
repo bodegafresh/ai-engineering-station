@@ -44,7 +44,8 @@ public final class DockerVerificationRunner implements VerificationRunner {
                 "--workdir","/work",
                 "--env","GRADLE_USER_HOME=/home/gradle",
                 "--env","HOME=/home/gradle",
-                image,"sh","-c","cp -R /workspace/. /work/ && sh ./gradlew test --offline --no-daemon --console=plain");
+                image, "sh", "-c",
+                "cp -R /workspace/. /work/ && gradle test --offline --no-daemon --console=plain");
         ProcessBuilder pb=new ProcessBuilder(cmd).redirectErrorStream(true);
         pb.environment().clear();
         pb.environment().put("PATH","/usr/local/bin:/usr/bin:/bin");
