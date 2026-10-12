@@ -27,16 +27,20 @@ public class TaskRuntime {
     private final int maxAttempts;
     private final Duration lease;
     private final boolean enabled;
+    private final dev.aies.control.execution.SpecialistPromptComposer composer;
+    private final boolean specialistExecutionEnabled;
 
-    public TaskRuntime(Vertx vertx, LocalModelClient model,
+    public TaskRuntime(Vertx vertx, LocalModelClient model, dev.aies.control.execution.SpecialistPromptComposer composer,
        @ConfigProperty(name="aies.data.dir",defaultValue="./data") String dataDir,
        @ConfigProperty(name="aies.scheduler.max-attempts",defaultValue="3") int maxAttempts,
        @ConfigProperty(name="aies.scheduler.lease-seconds",defaultValue="180") long leaseSeconds,
        @ConfigProperty(name="aies.model.timeout-seconds",defaultValue="90") long modelTimeoutSeconds,
-       @ConfigProperty(name="aies.model.enabled",defaultValue="false") boolean enabled) throws Exception {
+       @ConfigProperty(name="aies.model.enabled",defaultValue="false") boolean enabled,
+       @ConfigProperty(name="aies.specialist.execution.enabled",defaultValue="false") boolean specialistExecutionEnabled) throws Exception {
         if(leaseSeconds<=modelTimeoutSeconds+10) throw new IllegalArgumentException("Lease must exceed model timeout by >10 seconds");
         this.vertx=vertx;this.model=model;this.maxAttempts=maxAttempts;
         this.lease=Duration.ofSeconds(leaseSeconds);this.enabled=enabled;
+        this.composer=composer;this.specialistExecutionEnabled=specialistExecutionEnabled;
         Files.createDirectories(Path.of(dataDir));
         repository=new SqliteTaskRepository(Path.of(dataDir,"tasks.db").toAbsolutePath().toString());
         service=new TaskService(repository);
@@ -80,9 +84,10 @@ public class TaskRuntime {
                 try {
                     LOG.infof("Executing task %s", work.task().id());
 
-                    var response = model.complete(
-                        work.task().objective()
-                    );
+                    String modelInput = specialistExecutionEnabled
+                        ? composer.compose(work.task().objective()).prompt()
+                        : work.task().objective();
+                    var response = model.complete(modelInput);
 
                     if (!repository.completeWithResult(
                             work,
