@@ -1,5 +1,9 @@
 package dev.aies.control;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -9,13 +13,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /** v0.7: local-first, opt-in cloud routing; no tools, retries, or automatic cloud fallback. */
@@ -55,8 +52,8 @@ public class LocalModelClient {
     }
 
     /**
-     * Constructor de compatibilidad con v0.6.
-     * Mantiene los tests existentes sin habilitar servicios cloud.
+     * Constructor de compatibilidad con v0.6 y tests existentes.
+     * Mantiene inferencia local y deshabilita la nube.
      */
     public LocalModelClient(
             ObjectMapper mapper,
