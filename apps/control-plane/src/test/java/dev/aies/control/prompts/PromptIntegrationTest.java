@@ -7,6 +7,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.HashSet;
+
 class PromptIntegrationTest {
 
     private final VelocityPromptTemplateRegistry registry =
@@ -27,17 +29,42 @@ class PromptIntegrationTest {
 
     @Test
     void allSpecialistsHaveRenderableTemplates() {
-        assertEquals(15, registry.availableTemplates().size());
 
-        for (String id : registry.availableTemplates()) {
-            assertNotNull(catalog.get(id));
+        var catalogIds = new HashSet<>(catalog.ids());
+        var templateIds = new HashSet<>(registry.availableTemplates());
 
-            String prompt = registry.render(id, variables());
+        var missingTemplates = new HashSet<>(catalogIds);
+        missingTemplates.removeAll(templateIds);
 
-            assertFalse(prompt.isBlank(), id);
-            assertTrue(prompt.contains(
-                "Implementar validación de RUT chileno"
-            ), id);
+        var extraTemplates = new HashSet<>(templateIds);
+        extraTemplates.removeAll(catalogIds);
+
+        assertTrue(
+            missingTemplates.isEmpty() && extraTemplates.isEmpty(),
+            "Faltan templates: " + missingTemplates
+                + " | Templates adicionales: " + extraTemplates
+        );
+
+        assertFalse(catalog.ids().isEmpty(), "El catálogo no debe estar vacío");
+
+        assertEquals(
+            new HashSet<>(catalog.ids()),
+            new HashSet<>(registry.availableTemplates()),
+            "El catálogo y los templates deben contener los mismos especialistas"
+        );
+
+        for (String id : catalog.ids()) {
+            String prompt = assertDoesNotThrow(
+                () -> registry.render(id, variables()),
+                "Error renderizando el especialista: " + id
+            );
+
+            assertFalse(prompt.isBlank(), "Prompt vacío: " + id);
+
+            assertTrue(
+                prompt.contains("Implementar validación de RUT chileno"),
+                "El especialista " + id + " no incorpora el objetivo"
+            );
         }
     }
 
