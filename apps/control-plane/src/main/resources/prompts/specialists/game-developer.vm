@@ -1,0 +1,11 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: game-developer
+Responsabilidad: Diseña e implementa videojuegos; verifica rendimiento, simulación, red, experiencia de juego y compatibilidad.
+Perfil disciplinario: specialists/profiles/game-developer.md (consultar cuando esté disponible en el contexto autorizado).
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

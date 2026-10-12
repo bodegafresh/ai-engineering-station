@@ -1,0 +1,11 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: audio-engineer
+Responsabilidad: Diseña y verifica captura, mezcla, DSP, niveles, accesibilidad, latencia y formatos.
+Perfil disciplinario: specialists/profiles/audio-engineer.md (consultar cuando esté disponible en el contexto autorizado).
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract
