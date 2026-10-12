@@ -47,31 +47,76 @@ public class TaskRuntime {
     }
     public TaskService service() { return service; }
     public SqliteTaskRepository repository() { return repository; }
+    
     private void schedulePoll() {
-        if(!polling.compareAndSet(false,true)) return;
-        vertx.getDelegate().<Void>executeBlocking(() -> {
-            repository.recoverExpired(maxAttempts);
-            repository.publishOutbox((type,payload)->vertx.eventBus().publish("aies.events",type+":"+payload),50);
-            if(enabled) {
-                var claim=repository.claimNext(lease,maxAttempts);
-                if(claim.isPresent()) {
-                    var work=claim.get();
-                    try {
-                        var response=model.complete(work.task().objective());
-                        if(!repository.completeWithResult(work,response.content(),response.model()))
-                            LOG.warnf("Stale result discarded for task %s",work.task().id());
-                    } catch (Exception e) {
-                        LOG.warnf("Model attempt %d failed for task %s: %s",work.attempt(),work.task().id(),e.toString());
-                        // Failure is terminal for this attempt; explicit future retry policy will be added later.
-                        repository.fail(work,e.getClass().getSimpleName()+": "+e.getMessage());
-                    }
+        if (!polling.compareAndSet(false, true)) {
+            return;
+        }
+
+        Thread.startVirtualThread(() -> {
+            try {
+                repository.recoverExpired(maxAttempts);
+
+                repository.publishOutbox(
+                    (type, payload) ->
+                        vertx.eventBus().publish(
+                            "aies.events", type + ":" + payload
+                        ),
+                    50
+                );
+
+                if (!enabled) {
+                    return;
                 }
+
+                var claim = repository.claimNext(lease, maxAttempts);
+
+                if (claim.isEmpty()) {
+                    return;
+                }
+
+                var work = claim.get();
+
+                try {
+                    LOG.infof("Executing task %s", work.task().id());
+
+                    var response = model.complete(
+                        work.task().objective()
+                    );
+
+                    if (!repository.completeWithResult(
+                            work,
+                            response.content(),
+                            response.model()
+                    )) {
+                        LOG.warnf(
+                            "Stale result discarded for task %s",
+                            work.task().id()
+                        );
+                    }
+
+                } catch (Exception e) {
+                    LOG.warnf(
+                        e,
+                        "Model attempt %d failed for task %s",
+                        work.attempt(),
+                        work.task().id()
+                    );
+
+                    repository.fail(
+                        work,
+                        e.getClass().getSimpleName()
+                            + ": " + e.getMessage()
+                    );
+                }
+
+            } catch (Exception e) {
+                LOG.error("Scheduler iteration failed", e);
+            } finally {
+                polling.set(false);
             }
-            return null;
-        },false).onComplete(ar->{
-            polling.set(false);
-            if(ar.failed()) LOG.error("Scheduler iteration failed; next poll will retry",ar.cause());
         });
     }
+
     @PreDestroy void close() { vertx.getDelegate().cancelTimer(timerId); }
 }

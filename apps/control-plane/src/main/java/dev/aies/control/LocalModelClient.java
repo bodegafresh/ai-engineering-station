@@ -38,20 +38,55 @@ public class LocalModelClient {
         this.timeout=Duration.ofSeconds(timeoutSeconds);
         this.client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
+    
     public Completion complete(String objective) throws Exception {
-        var payload=Map.of("model",model,"stream",false,"temperature",0.2,
-          "messages",List.of(
-            Map.of("role","system","content","Eres un ingeniero de software. Responde en español. Si se pide código, entrégalo como texto y explica cómo verificarlo. No afirmes haber ejecutado herramientas, pruebas ni cambios en archivos."),
-            Map.of("role","user","content",objective)));
-        HttpRequest request=HttpRequest.newBuilder(endpoint)
-          .timeout(timeout).header("Content-Type","application/json")
-          .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload))).build();
-        HttpResponse<String> response=client.send(request,HttpResponse.BodyHandlers.ofString());
-        if(response.statusCode()!=200) throw new IllegalStateException("Local model returned HTTP "+response.statusCode());
-        JsonNode root=mapper.readTree(response.body());
-        JsonNode content=root.path("choices").path(0).path("message").path("content");
-        if(!content.isTextual() || content.asText().isBlank()) throw new IllegalStateException("Empty or invalid model response");
-        String usedModel=root.path("model").asText(model);
-        return new Completion(usedModel,content.asText());
+        var payload = Map.of(
+            "model", model,
+            "stream", false,
+            "temperature", 0.2,
+            "max_tokens", 512,
+            "messages", List.of(
+                Map.of(
+                    "role", "system",
+                    "content", "Eres un ingeniero de software. Responde en español. "
+                        + "Entrega respuestas concisas. Si se pide código, "
+                        + "explícalo sin afirmar que ejecutaste herramientas o pruebas."
+                ),
+                Map.of("role", "user", "content", objective)
+            )
+        );
+
+        HttpRequest request = HttpRequest.newBuilder(endpoint)
+            .timeout(timeout)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(
+                mapper.writeValueAsString(payload)
+            ))
+            .build();
+
+        HttpResponse<String> response = client.send(
+            request,
+            HttpResponse.BodyHandlers.ofString()
+        );
+
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException(
+                "Local model returned HTTP " + response.statusCode()
+            );
+        }
+
+        JsonNode root = mapper.readTree(response.body());
+        JsonNode content = root.path("choices")
+            .path(0).path("message").path("content");
+
+        if (!content.isTextual() || content.asText().isBlank()) {
+            throw new IllegalStateException("Empty or invalid model response");
+        }
+
+        return new Completion(
+            root.path("model").asText(model),
+            content.asText()
+        );
     }
+
 }
