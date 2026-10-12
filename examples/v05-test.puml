@@ -1,0 +1,10 @@
+@startuml
+title AI Engineering Station v0.5
+actor Developer
+rectangle "Quarkus Control Plane" {
+  component "Tool Gateway"
+}
+component "PlantUML" as UML
+Developer --> "Tool Gateway"
+"Tool Gateway" --> UML
+@enduml
