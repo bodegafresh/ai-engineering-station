@@ -40,3 +40,7 @@ __pycache__/
 .env
 .env.local
 .env.*.local
+
+# P0.4: durable local communication records
+/data/agent-communications/
+/apps/control-plane/data/agent-communications/
