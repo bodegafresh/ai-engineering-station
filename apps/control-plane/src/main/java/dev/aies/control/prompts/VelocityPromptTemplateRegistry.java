@@ -23,8 +23,8 @@ public class VelocityPromptTemplateRegistry implements PromptTemplateRegistry {
         props.setProperty(RuntimeConstants.RESOURCE_LOADERS, "class");
         props.setProperty("resource.loader.class.class", ClasspathResourceLoader.class.getName());
         props.setProperty(RuntimeConstants.RUNTIME_REFERENCES_STRICT, "true");
-        props.setProperty("velocimacro.permissions.allow.inline", "false");
-        props.setProperty("velocimacro.permissions.allow.inline.to.replace.global", "false");
+        props.setProperty("velocimacro.inline.allow", "false");
+props.setProperty("velocimacro.inline.replace_global", "false");
         props.setProperty("directive.parse.max_depth", "4");
         engine = new VelocityEngine(props);
         engine.init();

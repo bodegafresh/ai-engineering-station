@@ -188,6 +188,111 @@
         "acceptance-reviewer"
       ],
       "maxIterations": 5
+    },
+    {
+      "id": "game-developer",
+      "template": "game-developer",
+      "capabilities": [
+        "game-development",
+        "unreal-engine",
+        "gameplay",
+        "multiplayer"
+      ],
+      "reviewers": [
+        "architect",
+        "qa-engineer",
+        "security-engineer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "statistician",
+      "template": "statistician",
+      "capabilities": [
+        "statistics",
+        "probability",
+        "data-analysis",
+        "model-validation"
+      ],
+      "reviewers": [
+        "qa-engineer",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "finance-analyst",
+      "template": "finance-analyst",
+      "capabilities": [
+        "finance",
+        "risk-analysis",
+        "budgeting",
+        "financial-modeling"
+      ],
+      "reviewers": [
+        "acceptance-reviewer",
+        "security-engineer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "anthropologist",
+      "template": "anthropologist",
+      "capabilities": [
+        "anthropology",
+        "ethnography",
+        "qualitative-research",
+        "research-ethics"
+      ],
+      "reviewers": [
+        "acceptance-reviewer",
+        "security-engineer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "audio-engineer",
+      "template": "audio-engineer",
+      "capabilities": [
+        "audio",
+        "sound-design",
+        "dsp",
+        "mixing"
+      ],
+      "reviewers": [
+        "qa-engineer",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "film-specialist",
+      "template": "film-specialist",
+      "capabilities": [
+        "film",
+        "screenwriting",
+        "cinematography",
+        "editing"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "photographer",
+      "template": "photographer",
+      "capabilities": [
+        "photography",
+        "lighting",
+        "color-management",
+        "image"
+      ],
+      "reviewers": [
+        "image-specialist",
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
     }
   ]
 }
