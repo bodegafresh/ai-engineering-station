@@ -1,0 +1,162 @@
+{
+  "defaultModel": "local-default",
+  "models": {
+    "local-default": {
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "enabled": true,
+      "cloud": false,
+      "endpoint": "http://127.0.0.1:11434",
+      "credentialEnv": null
+    },
+    "local-reasoning": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "enabled": true,
+      "cloud": false,
+      "endpoint": "http://127.0.0.1:11434",
+      "credentialEnv": null
+    },
+    "local-code": {
+      "provider": "ollama",
+      "model": "qwen2.5-coder:7b",
+      "enabled": true,
+      "cloud": false,
+      "endpoint": "http://127.0.0.1:11434",
+      "credentialEnv": null
+    },
+    "local-light": {
+      "provider": "ollama",
+      "model": "qwen3:4b",
+      "enabled": true,
+      "cloud": false,
+      "endpoint": "http://127.0.0.1:11434",
+      "credentialEnv": null
+    },
+    "cloud-optional": {
+      "provider": "openai-compatible",
+      "model": "CONFIGURE_ME",
+      "enabled": false,
+      "cloud": true,
+      "endpoint": "https://example.invalid/v1",
+      "credentialEnv": "AIES_CLOUD_API_KEY"
+    }
+  },
+  "specialists": {
+    "router": [
+      "local-light",
+      "local-default"
+    ],
+    "planner": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "architect": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "backend-developer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "frontend-developer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "qa-engineer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "security-engineer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "devops-engineer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "ux-ui-designer": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "native-developer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "image-specialist": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "video-specialist": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "feasibility-reviewer": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "acceptance-reviewer": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "retrospective": [
+      "local-light",
+      "local-default"
+    ],
+    "game-developer": [
+      "local-code",
+      "local-reasoning",
+      "local-default"
+    ],
+    "statistician": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "finance-analyst": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "anthropologist": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "audio-engineer": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "film-specialist": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "photographer": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "geography-analyst": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "geopolitical-analyst": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "economist": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "market-researcher": [
+      "local-reasoning",
+      "local-default"
+    ],
+    "growth-strategist": [
+      "local-reasoning",
+      "local-default"
+    ]
+  }
+}
