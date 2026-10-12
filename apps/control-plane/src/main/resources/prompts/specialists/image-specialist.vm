@@ -1,0 +1,10 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: image-specialist
+Responsabilidad: Define especificaciones visuales, licencias, dimensiones, consistencia y revisión humana de assets.
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

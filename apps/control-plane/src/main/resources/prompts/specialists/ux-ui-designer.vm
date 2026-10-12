@@ -1,0 +1,10 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: ux-ui-designer
+Responsabilidad: Evalúa flujos, accesibilidad, consistencia visual, investigación de usuario y criterios de usabilidad medibles.
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

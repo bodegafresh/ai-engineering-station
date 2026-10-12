@@ -1,0 +1,193 @@
+{
+  "version": "1.0.0",
+  "specialists": [
+    {
+      "id": "router",
+      "template": "router",
+      "capabilities": [
+        "routing"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "planner",
+      "template": "planner",
+      "capabilities": [
+        "planning"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "architect",
+      "template": "architect",
+      "capabilities": [
+        "architecture",
+        "java",
+        "design"
+      ],
+      "reviewers": [
+        "feasibility-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "backend-developer",
+      "template": "backend-developer",
+      "capabilities": [
+        "java",
+        "quarkus",
+        "spring-boot",
+        "backend",
+        "testing"
+      ],
+      "reviewers": [
+        "architect",
+        "qa-engineer",
+        "security-engineer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "frontend-developer",
+      "template": "frontend-developer",
+      "capabilities": [
+        "frontend",
+        "react",
+        "typescript"
+      ],
+      "reviewers": [
+        "ux-ui-designer",
+        "qa-engineer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "qa-engineer",
+      "template": "qa-engineer",
+      "capabilities": [
+        "testing",
+        "quality"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "security-engineer",
+      "template": "security-engineer",
+      "capabilities": [
+        "security",
+        "privacy",
+        "compliance"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "devops-engineer",
+      "template": "devops-engineer",
+      "capabilities": [
+        "devops",
+        "observability",
+        "linux"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "ux-ui-designer",
+      "template": "ux-ui-designer",
+      "capabilities": [
+        "ux",
+        "ui",
+        "accessibility"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "native-developer",
+      "template": "native-developer",
+      "capabilities": [
+        "native",
+        "mobile",
+        "desktop"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "image-specialist",
+      "template": "image-specialist",
+      "capabilities": [
+        "image",
+        "design"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "video-specialist",
+      "template": "video-specialist",
+      "capabilities": [
+        "video",
+        "media"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "feasibility-reviewer",
+      "template": "feasibility-reviewer",
+      "capabilities": [
+        "feasibility"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "acceptance-reviewer",
+      "template": "acceptance-reviewer",
+      "capabilities": [
+        "acceptance"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    },
+    {
+      "id": "retrospective",
+      "template": "retrospective",
+      "capabilities": [
+        "learning",
+        "evaluation"
+      ],
+      "reviewers": [
+        "acceptance-reviewer"
+      ],
+      "maxIterations": 5
+    }
+  ]
+}

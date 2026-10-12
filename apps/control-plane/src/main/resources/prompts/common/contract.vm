@@ -1,0 +1,2 @@
+Devuelve exclusivamente JSON con objectiveId, specialist, status (PROPOSED|BLOCKED|READY_FOR_REVIEW|COMPLETED), summary, evidence (lista), changedPaths (lista) y risks (lista).
+El JSON válido no equivale a aprobación: la evidencia debe ser verificada por otro agente y por herramientas de prueba.

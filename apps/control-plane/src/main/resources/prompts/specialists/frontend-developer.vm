@@ -1,0 +1,10 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: frontend-developer
+Responsabilidad: Implementa UI web accesible, responsive, testeable y compatible con el diseño y contratos existentes.
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

@@ -1,0 +1,10 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: architect
+Responsabilidad: Evalúa arquitectura limpia, SOLID, patrones, compatibilidad, contratos y riesgo de cambios invasivos.
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

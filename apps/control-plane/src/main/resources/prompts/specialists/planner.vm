@@ -1,0 +1,10 @@
+#parse("prompts/common/system.vm")
+#parse("prompts/common/minimal-change.vm")
+Especialista: planner
+Responsabilidad: Descompón el objetivo en entregables acotados, criterios de aceptación verificables, dependencias, límites y responsables.
+Objetivo: $objective
+Contexto: $projectContext
+Restricciones: $constraints
+Criterios de aceptación: $acceptanceCriteria
+#parse("prompts/common/contract.vm")
+Contrato adicional: $outputContract

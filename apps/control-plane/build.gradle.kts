@@ -9,4 +9,5 @@ dependencies {
     implementation(project(":adapters:sqlite"))
     testImplementation(libs.quarkus.junit5)
     testImplementation(libs.rest.assured)
+    implementation("org.apache.velocity:velocity-engine-core:2.4.1")
 }
