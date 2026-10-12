@@ -23,6 +23,10 @@ public class CommunicationEventBus {
     @Inject ObjectMapper mapper;
     @ConfigProperty(name="aies.agent-communications.data-root", defaultValue="./data/agent-communications") String dataRoot;
     @ConfigProperty(name="aies.agent-communications.audit-max-iterations", defaultValue="3") int maxIterations;
+    @ConfigProperty(name="aies.semantic-audit.enabled", defaultValue="false") boolean semanticEnabled;
+    @ConfigProperty(name="aies.model.base-url", defaultValue="http://127.0.0.1:11434") String modelBaseUrl;
+    @ConfigProperty(name="aies.model.name", defaultValue="qwen3:4b") String modelName;
+    @ConfigProperty(name="aies.semantic-audit.timeout-seconds", defaultValue="45") int semanticTimeout;
     private MessageConsumer<JsonObject> consumer;
 
     @jakarta.annotation.PostConstruct
@@ -60,7 +64,11 @@ public class CommunicationEventBus {
             long taskAudits = store.list(subject.workflowId()).stream()
                 .filter(r -> "AUDIT".equals(r.kind()) && r.taskId().equals(subject.taskId())).count();
             int iteration = (int)Math.min((long)maxIterations,taskAudits+1);
-            List<String> findings = CommunicationQualityPolicy.findings(subject);
+            List<String> findings = new java.util.ArrayList<>(CommunicationQualityPolicy.findings(subject));
+            if (findings.isEmpty() && semanticEnabled) {
+                var semantic = SemanticAuditPolicy.review(subject,mapper,modelBaseUrl,modelName,semanticTimeout);
+                if (!semantic.approved()) findings.addAll(semantic.findings());
+            }
             var decision = findings.isEmpty() ? CommunicationContracts.AuditDecision.APPROVED :
                 iteration >= maxIterations ? CommunicationContracts.AuditDecision.BLOCKED :
                 CommunicationContracts.AuditDecision.REVISION_REQUIRED;
