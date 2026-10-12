@@ -8,6 +8,16 @@ data/
 *.db
 *.db-shm
 *.db-wal
-.env
 *.log
 .DS_Store
+# AIES local runtime
+.aies/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/

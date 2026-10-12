@@ -1,0 +1,14 @@
+@startuml
+skinparam componentStyle rectangle
+actor Developer
+component "Quarkus control plane" as Q
+component "Tool gateway (approval required)" as T
+component "Ollama / Qwen" as L
+component "Playwright" as P
+component "PlantUML" as U
+Developer --> Q
+Q --> L
+Q ..> T : future v0.5 integration
+T --> P
+T --> U
+@enduml
