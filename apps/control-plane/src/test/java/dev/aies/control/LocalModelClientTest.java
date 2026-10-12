@@ -18,7 +18,7 @@ class LocalModelClientTest {
             var client=new LocalModelClient(new ObjectMapper(),"http://127.0.0.1:"+server.getAddress().getPort(),"mock",5);
             var answer=client.complete("Di hola");
             assertEquals("Hola desde el modelo",answer.content());
-            assertEquals("mock",answer.model());
+            assertEquals("local:mock",answer.model());
         } finally {server.stop(0);}
     }
     @Test void rejectsNonLocalEndpoint() {
