@@ -14,6 +14,7 @@ public final class ExecutionQualityGate {
     private final ObjectMapper mapper;
     private final Path root;
     private final int timeoutSeconds;
+    private Path workspaceRoot;
 
     public ExecutionQualityGate(Vertx vertx, ObjectMapper mapper, Path root, int timeoutSeconds) {
         if (timeoutSeconds < 1 || timeoutSeconds > 180) throw new IllegalArgumentException("Invalid audit timeout");
@@ -21,6 +22,21 @@ public final class ExecutionQualityGate {
         this.mapper = java.util.Objects.requireNonNull(mapper);
         this.root = java.util.Objects.requireNonNull(root);
         this.timeoutSeconds = timeoutSeconds;
+        this.workspaceRoot = null;
+    }
+
+    public ExecutionQualityGate(Vertx vertx, ObjectMapper mapper, Path root, int timeoutSeconds, Path workspaceRoot) {
+        this(vertx, mapper, root, timeoutSeconds);
+        this.workspaceRoot = java.util.Objects.requireNonNull(workspaceRoot);
+    }
+
+    private void verifyMaterial(CommunicationStore.StoredRecord record) throws Exception {
+        if (!(record.payload() instanceof CommunicationContracts.Artifact artifact)) return;
+        boolean material = artifact.sourceRefs().stream().anyMatch(ref -> ref.startsWith(WorkspaceMaterialEvidence.PREFIX));
+        if (material) {
+            if (workspaceRoot == null) throw new SecurityException("Material verification not configured");
+            WorkspaceMaterialEvidence.verify(workspaceRoot, artifact);
+        }
     }
 
     public JsonObject review(String workflowId, String taskId) throws Exception {
@@ -36,7 +52,9 @@ public final class ExecutionQualityGate {
             if (!"EVIDENCE_PENDING".equals(work.status()))
                 throw new IllegalStateException("Task not awaiting evidence verification");
             evidenceRef = work.evidenceRef();
-            artifactId = ExecutionEvidenceVerifier.verify(communication, workflowId, taskId, evidenceRef).id();
+            var evidence = ExecutionEvidenceVerifier.verify(communication, workflowId, taskId, evidenceRef);
+            verifyMaterial(evidence);
+            artifactId = evidence.id();
         }
         var response = vertx.eventBus().<JsonObject>request(CommunicationEventBus.AUDIT_REQUEST,
             new JsonObject().put("recordId", artifactId),
@@ -47,7 +65,7 @@ public final class ExecutionQualityGate {
         if (decision == null || auditId == null) throw new IllegalStateException("Incomplete audit response");
         try (var execution = handoff(); var communication = communications()) {
             // Revalidate immutable records after asynchronous audit, before state transition.
-            ExecutionEvidenceVerifier.verify(communication, workflowId, taskId, evidenceRef);
+            verifyMaterial(ExecutionEvidenceVerifier.verify(communication, workflowId, taskId, evidenceRef));
             var auditRecord = communication.find(auditId).orElseThrow();
             if (!"AUDIT".equals(auditRecord.kind()) || !workflowId.equals(auditRecord.workflowId())
                 || !taskId.equals(auditRecord.taskId())) throw new SecurityException("Audit ownership mismatch");
