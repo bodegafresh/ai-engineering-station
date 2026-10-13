@@ -37,6 +37,20 @@ public class ExecutionHandoffResource {
             return Response.status(created ? 201 : 200).entity(Map.of("workflowId",id,"imported",created)).build();
         }
     }
+    /** Operator-only, immutable authorization; never accepts a boolean from the model. */
+    @POST @Path("/workflows/{id}/tasks/{taskId}/authorize-documentation")
+    public Response authorizeDocumentation(@HeaderParam("X-AIES-Workspace-Token") String token,
+            @PathParam("id") String id, @PathParam("taskId") String taskId,
+            DocumentationAuthorizationRequest request) throws Exception {
+        auth(token);
+        if(request==null) throw new BadRequestException("Missing authorization");
+        try(var store=open()) {
+            var a=new ExecutionCapabilityAuthorization(id,taskId,"workspace-documentation",request.sourcePath(),request.sourceSha256());
+            boolean created=store.authorizeCapability(a);
+            return Response.status(created?201:200).entity(Map.of("authorized",true,"created",created)).build();
+        }
+    }
+    public record DocumentationAuthorizationRequest(String sourcePath,String sourceSha256) {}
     @GET @Path("/workflows/{id}/tasks")
     public Object tasks(@HeaderParam("X-AIES-Workspace-Token") String token,
                         @PathParam("id") String id) throws Exception {

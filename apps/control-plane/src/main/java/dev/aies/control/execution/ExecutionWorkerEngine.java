@@ -38,6 +38,34 @@ public final class ExecutionWorkerEngine {
             task=ExecutionWorkerPolicy.task(store.plan(workflowId),work.taskId(),work.specialistId());
         }
         try {
+            ExecutionCapabilityAuthorization authorization;
+            try(var store=handoff()) { authorization=store.authorization(workflowId,work.taskId()).orElse(null); }
+            if (authorization != null) {
+                if (!"software-engineer".equals(work.specialistId()) || !"software".equals(task.capability()))
+                    throw new SecurityException("Capability assignment mismatch");
+                JsonObject docRequest = new JsonObject().put("workflowId",workflowId)
+                    .put("taskId",work.taskId()).put("attemptId",work.leaseToken())
+                    .put("approved",true).put("sourcePath",authorization.sourcePath())
+                    .put("approvedSourceSha256",authorization.sourceSha256());
+                JsonObject generated=vertx.eventBus().<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
+                    docRequest,new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
+                    .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();
+                if(generated==null || !workflowId.equals(generated.getString("workflowId"))
+                    || !work.taskId().equals(generated.getString("taskId"))
+                    || !work.leaseToken().equals(generated.getString("attemptId")))
+                    throw new SecurityException("Documentation correlation mismatch");
+                String recordId=generated.getString("artifactRecordId");
+                dev.aies.control.communication.CommunicationContracts.id(recordId);
+                try(var comm=new CommunicationStore(root.resolve("communication.sqlite"),mapper)) {
+                    ExecutionEvidenceVerifier.verify(comm,workflowId,work.taskId(),"artifact://communication/"+recordId);
+                }
+                try(var store=handoff()) {
+                    if(!store.stageEvidence(workflowId,work.taskId(),work.leaseToken(),recordId))
+                        throw new IllegalStateException("Lease expired before documentation staging");
+                }
+                return new JsonObject().put("claimed",true).put("taskId",work.taskId())
+                    .put("status","EVIDENCE_PENDING_VERIFICATION").put("artifactRecordId",recordId);
+            }
             JsonObject request = new JsonObject()
                 .put("schemaVersion","1.0")
                 .put("workflowId",workflowId).put("taskId",work.taskId())

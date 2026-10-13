@@ -49,6 +49,9 @@ public final class WorkspaceDocumentationService {
         String javaSource = Files.readString(realSource, StandardCharsets.UTF_8);
         if (javaSource.isBlank()) throw new IllegalArgumentException("Empty source");
         String sourceSha = sha256(javaSource.getBytes(StandardCharsets.UTF_8));
+        String approvedSourceSha = input.getString("approvedSourceSha256");
+        if (approvedSourceSha != null && !sourceSha.equals(approvedSourceSha))
+            throw new SecurityException("Source changed since authorization");
         String objective = "Document this Java source faithfully as Markdown. Include responsibilities, public API and limitations. " +
             "Do not invent tests or execution results. Source SHA-256: " + sourceSha + "\n" + TechnicalSpecialistGuidance.documentation() + "\n" + javaSource;
         if (objective.length() > 4096) throw new IllegalArgumentException("Source exceeds model prompt budget");
