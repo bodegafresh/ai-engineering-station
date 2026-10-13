@@ -514,3 +514,33 @@ git diff --check
 - Report is a read-only observation; a VERIFIED canonical manifest does not prove semantic correctness or real-world task completion.
 - G9 and report are not atomic cross-endpoint snapshots; concurrent mutations can cause drift. Run only in an operator-controlled quiet window.
 - No Gradle, Quarkus, Ollama, 429 or crash/restart tests were executed by the package producer.
+
+## F4.3-G10-G — Deterministic negative operator transport fixtures and evidence gate (F4 OPEN)
+
+### Scope delivered
+- `scripts/f43g10g-negative-tests.sh` exercises the actual shared G10-E Bash transport against an isolated mock curl executable. Cases: HTML 404, JSON 200, 409 conflict, 429 saturation response, malformed successful JSON, ambiguous POST transport failure, invalid workflow IDs and no token disclosure through curl argv or test logs. It never invokes Quarkus, Ollama, or a production endpoint.
+- `scripts/f43g10g-evidence-check.sh` validates the schema, workflow correlation and task count of an **existing** G10-F read-only evidence JSON. It refuses incomplete canonical acceptance, optionally requires `MATERIAL_VERIFIED`, and checks optional before/after restart snapshots for drift. It does not create, approve or alter any workflow or audit, and does not infer that a restart actually happened.
+- `scripts/f43g10g-shell-tests.sh` runs the negative fixtures and evidence gate regressions. All scripts are Bash-only, fail closed, with no Python runtime dependency.
+
+### Required validation
+```bash
+bash scripts/f43g10e-shell-tests.sh
+bash scripts/f43g10g-shell-tests.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Live certification procedure (operator only)
+1. Create a **new** immutable intake and run the existing G6 `create`/`inspect`/`resume` flow. Do not revise historical rejected audits in place. Observe an actual APPROVED planning audit and perform explicit review before import.
+2. Execute G5 against real opt-in Quarkus/Ollama, capture actual execution audit and canonical acceptance. If workspace material applies, set `AIES_CERT_REQUIRE_MATERIAL=true` and use G10-F report to record material acceptance.
+3. Set `AIES_WORKFLOW_ID` and `AIES_CERT_DIR`, run G10-F report, G9 `before`, manually restart Quarkus with the same durable data root, G9 `after`, then `bash scripts/f43g10g-evidence-check.sh`. Use a fresh private evidence directory; never overwrite immutable observations.
+4. Separately record actual lease expiration, late reply, replay, 429/concurrency, tamper, auth rejection and event-loop latency tests. A mocked 429 is **not** production 429 evidence. Record timestamps, model identity only when observed, artifact/audit IDs, redacted logs and operator sign-off.
+
+### Remaining gaps and next hito: F4.3-G10-H
+- Implement controlled, opt-in production negative scenario runner with durable-state reconciliation for timeout, late reply, lease fencing and saturation; prohibit automatic replay of ambiguous mutations. Add Quarkus/JUnit coverage for exact negative contracts.
+- Capture real model identity and timing at the Ollama adapter boundary, and observed event-loop/worker metrics; avoid fabricated timing or model claims.
+- Add material byte-tamper and audit replay tests with independent SHA-256 verification, isolated test roots and no production database writes.
+- Complete actual restart certification and signed operator checklist. **F4 remains OPEN; F5 not started.**
+
+### Honesty of validation
+The archive author can validate shell syntax and mock fixtures locally, but has not run this package against the user's Quarkus/Ollama instance or certified a live F4 workflow. Existing G10-F report and G9 snapshots are read-only observations, not comprehensive end-to-end proof.
