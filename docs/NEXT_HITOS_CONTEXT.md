@@ -136,3 +136,32 @@ git diff --check
 
 ### Aprendizaje F4.3-C
 La aceptación canónica no garantiza que los bytes actuales del workspace coincidan. Mantener niveles de verificación explícitos, sin cambiar semánticas existentes ni inventar resultados de pruebas.
+
+## F4.3-D — Frontera de aceptación material (implementación propuesta; validación local pendiente)
+### Alcance de este incremento
+- GET `/api/v1/execution/workflows/{id}/material-acceptance`, operador autenticado mediante `WorkspaceOperatorAuthorizer`, `@Blocking`, solo lectura.
+- Flag independiente `AIES_EXECUTION_MATERIAL_ACCEPTANCE_ENABLED=false` por defecto; también exige handoff habilitado. Root de workspace y root de datos provienen solo de configuración del operador.
+- Reutiliza `ExecutionMaterialAcceptance` y su comprobación de contenido SHA-256; no introduce una segunda fuente de verdad, no modifica SQLite y no invoca especialistas.
+- Fallas de autenticación/flag: 404. Alteración material detectada: 409 sin revelar paths. No equivale a snapshot atómico ni a garantía de integridad futura.
+- Smoke Bash read-only de endpoint; no muestra token ni contenido de los documentos.
+
+### Validación requerida antes del PR
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionMaterialAcceptanceResourceTest' --tests '*ExecutionMaterialAcceptanceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+# Con Quarkus activo, flags y token de operador configurados:
+AIES_SMOKE_WORKFLOW_ID=<id-existente> bash scripts/f43d-smoke.sh
+```
+**No declarar E2E real con Ollama completado:** este incremento únicamente publica inspección material y smoke HTTP de lectura.
+
+### Siguiente incremento F4.3-E — Ejecución real trazable
+1. Preflight y prueba E2E real aislada con Ollama local y un workflow aprobado por operador, sin permisos implícitos ni scripts de shell ejecutados por el agente.
+2. Verificar claim, correlación de attempt, respuesta del especialista por Event Bus, persistencia del artefacto y auditoría exacta; comprobar estado tras reapertura SQLite.
+3. Para resultados materiales, usar únicamente capacidad `workspace-documentation` explícitamente autorizada; comparar bytes SHA-256 antes y después, y registrar ID de modelo y latencias observadas (nunca inventadas).
+4. Probar negativos: ausencia de grant, lease vencido, replay, timeout ambiguo, auditoría BLOCKED y material alterado; ninguno puede liberar tareas dependientes.
+5. Registrar límites de concurrencia, uso de workers y no bloqueo del event loop; separar evidencia determinista de evidencia con Ollama real.
+6. Adjuntar reporte reproducible al PR. Solo entonces decidir cierre F4.3 y avance a F5.
+
+### Aprendizaje F4.3-D
+La aceptación material es una inspección puntual de bytes; exponerla no convierte un test unitario en ejecución real. Reutilizar la política existente y proteger la frontera REST evita divergencias y privilegios adicionales.
