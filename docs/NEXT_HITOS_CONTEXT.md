@@ -292,3 +292,25 @@ El timeout del request Vert.x no cancela necesariamente la inferencia externa. E
 - F4 **remains open** until the actual end-to-end operator-approved flow (intake → plan → approval → real worker/consumer → Ollama → material if authorized → real audit → acceptance) has been run, recorded and checked against negative cases. Do not replace this requirement with a mocked audit.
 - F4.3-G5 next: orchestrated opt-in Quarkus E2E with production consumers, explicit human authorization, actual model identity/latency evidence, negative security/recovery cases and repeatable metrics; close F4 only on observed results. Then F5 tools and F6 hardening.
 - Learning: a read-only HTTP acceptance check is valuable operational evidence but must never be labeled a complete E2E; distinguish canonical record hashes from live filesystem SHA-256.
+
+## F4.3-G5 — Operator-controlled execution and audit commands (validation pending)
+- New opt-in `ExecutionOperatorActionsResource`: authenticated operator REST POST `run-one` and POST `review`; dispatches ONLY through production Vert.x Event Bus consumers, never constructs its own worker/auditor. All flags default off; `@Blocking` avoids blocking the event loop while waiting for replies.
+- Existing plan must already be approved and imported. No auto-approval or capability grants. Audit decision is the real result from production consumer; rejected audit does not unlock DAG.
+- `scripts/f43g5-operator-e2e.sh`: loopback-only, explicit operator token, bounded iterations, uses production HTTP actions and acceptance manifest; fails if final status is not VERIFIED. `jq` and `curl` required; it never prints token. Outputs identifiers and canonical hashes but does not establish current material bytes.
+- Risks: timeout is ambiguous; after HTTP 503/409 operator must inspect durable state before retrying. Script is not a substitute for negative tests, approval-path verification, production Ollama metrics, restart testing or material SHA checks.
+- This is an **operator E2E slice**, NOT a complete intake-to-delivery certification. F4 remains open pending reproducible intake → audited plan → import → execution → real Ollama → real semantic audit → acceptance, negative cases and measured runtime evidence.
+
+### Validate G5
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionOperatorActionsResourceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+bash -n scripts/f43g5-operator-e2e.sh
+git diff --check
+# Run against opt-in Quarkus with real Ollama, approved imported workflow and configured token:
+AIES_WORKFLOW_ID=... AIES_WORKSPACE_TOKEN=... bash scripts/f43g5-operator-e2e.sh
+```
+
+### Next: F4.3-G6 — Full operator intake and recovery certification
+- Automate real intake and explicit operator approval path using existing REST contracts; do not manufacture plan or audit decisions.
+- Record real model identity, duration, event-loop metrics and SHA-256 of current material bytes; test crash/restart, 429, stale lease, replay and tamper detection.
+- Close F4 only with passing observed E2E and attached evidence; then F5 controlled engineering tools and F6 operations.
