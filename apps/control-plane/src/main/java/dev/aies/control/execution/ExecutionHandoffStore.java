@@ -140,5 +140,19 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             return p.executeUpdate()==1;
         }
     }
+    /** Complete only the exact staged artifact after independently verified audit approval. */
+    public synchronized boolean approveEvidence(String workflowId, String taskId,
+                                                  String evidenceRef, String auditRecordId) throws Exception {
+        dev.aies.control.communication.CommunicationContracts.id(workflowId);
+        dev.aies.control.communication.CommunicationContracts.id(taskId);
+        dev.aies.control.communication.CommunicationContracts.id(auditRecordId);
+        if (evidenceRef == null || !evidenceRef.startsWith("artifact://communication/"))
+            throw new IllegalArgumentException("Invalid evidence reference");
+        try (var p = db.prepareStatement("UPDATE execution_tasks SET status='COMPLETED',updated_at=? WHERE workflow_id=? AND task_id=? AND status='EVIDENCE_PENDING' AND evidence_ref=?")) {
+            p.setString(1,java.time.Instant.now().toString());
+            p.setString(2,workflowId);p.setString(3,taskId);p.setString(4,evidenceRef);
+            return p.executeUpdate()==1;
+        }
+    }
     @Override public void close() throws Exception {db.close();}
 }
