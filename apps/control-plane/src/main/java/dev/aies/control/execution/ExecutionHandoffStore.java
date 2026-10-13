@@ -108,5 +108,16 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             return p.executeUpdate() == 1;
         }
     }
+    /** Idempotent lease-token guarded failure. Retryable work is requeued; terminal work is dead-lettered. */
+    public synchronized boolean fail(String workflowId,String taskId,String token,boolean retryable,int maxAttempts) throws Exception {
+        if (maxAttempts < 1 || maxAttempts > 20 || token == null || token.isBlank())
+            throw new IllegalArgumentException("Invalid failure command");
+        String status = retryable ? "PENDING" : "DEAD";
+        try (var p = db.prepareStatement("UPDATE execution_tasks SET status=CASE WHEN attempts>=? THEN 'DEAD' ELSE ? END,lease_token=NULL,lease_until=NULL,updated_at=? WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>?")) {
+            p.setInt(1,maxAttempts);p.setString(2,status);p.setString(3,Instant.now().toString());
+            p.setString(4,workflowId);p.setString(5,taskId);p.setString(6,token);p.setString(7,Instant.now().toString());
+            return p.executeUpdate()==1;
+        }
+    }
     @Override public void close() throws Exception {db.close();}
 }
