@@ -25,6 +25,7 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS execution_workflows(workflow_id TEXT PRIMARY KEY, plan_json TEXT NOT NULL, created_at TEXT NOT NULL)");
             s.execute("CREATE TABLE IF NOT EXISTS execution_tasks(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,specialist_id TEXT NOT NULL,status TEXT NOT NULL,lease_token TEXT,lease_until TEXT,attempts INTEGER NOT NULL DEFAULT 0,evidence_ref TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id),FOREIGN KEY(workflow_id) REFERENCES execution_workflows(workflow_id))");
             s.execute("CREATE INDEX IF NOT EXISTS execution_tasks_status_idx ON execution_tasks(workflow_id,status)");
+            s.execute("CREATE TABLE IF NOT EXISTS execution_capability_authorizations(workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, capability TEXT NOT NULL, source_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(workflow_id,task_id), FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
             try (var columns = db.createStatement().executeQuery("PRAGMA table_info(execution_tasks)")) {
@@ -103,6 +104,37 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             db.commit();return Optional.empty();
         } catch(Exception e) {db.rollback();throw e;}
         finally {db.setAutoCommit(true);}
+    }
+    /** Durable, immutable operator authorization for one task. Replays with different inputs fail closed. */
+    public synchronized boolean authorizeCapability(ExecutionCapabilityAuthorization a) throws Exception {
+        Objects.requireNonNull(a);
+        try (var p=db.prepareStatement("SELECT specialist_id,status FROM execution_tasks WHERE workflow_id=? AND task_id=?")) {
+            p.setString(1,a.workflowId());p.setString(2,a.taskId());
+            try(var rs=p.executeQuery()) {
+                if(!rs.next()) throw new IllegalArgumentException("Unknown execution task");
+                if(!"software-engineer".equals(rs.getString(1)) || !"PENDING".equals(rs.getString(2)))
+                    throw new IllegalStateException("Task is not authorizable");
+            }
+        }
+        try (var p=db.prepareStatement("INSERT OR IGNORE INTO execution_capability_authorizations(workflow_id,task_id,capability,source_path,source_sha256,created_at) VALUES(?,?,?,?,?,?)")) {
+            p.setString(1,a.workflowId());p.setString(2,a.taskId());p.setString(3,a.capability());
+            p.setString(4,a.sourcePath());p.setString(5,a.sourceSha256());p.setString(6,Instant.now().toString());
+            if(p.executeUpdate()==1) return true;
+        }
+        if(!authorization(a.workflowId(),a.taskId()).orElseThrow().equals(a))
+            throw new IllegalStateException("Conflicting authorization");
+        return false;
+    }
+    public synchronized Optional<ExecutionCapabilityAuthorization> authorization(String workflowId,String taskId) throws Exception {
+        dev.aies.control.communication.CommunicationContracts.id(workflowId);
+        dev.aies.control.communication.CommunicationContracts.id(taskId);
+        try(var p=db.prepareStatement("SELECT capability,source_path,source_sha256 FROM execution_capability_authorizations WHERE workflow_id=? AND task_id=?")) {
+            p.setString(1,workflowId);p.setString(2,taskId);
+            try(var rs=p.executeQuery()) {
+                if(!rs.next()) return Optional.empty();
+                return Optional.of(new ExecutionCapabilityAuthorization(workflowId,taskId,rs.getString(1),rs.getString(2),rs.getString(3)));
+            }
+        }
     }
     /** Legacy direct completion is disabled: all work must pass verified evidence and audit. */
     @Deprecated(forRemoval = true)
