@@ -189,3 +189,32 @@ bash scripts/f43e-live.sh # Ollama instalado, modelo descargado; opt-in real
 
 ### Aprendizaje F4.3-E
 Un adaptador real debe respetar exactamente el contrato de correlación del worker. Los mocks pueden ocultar un campo omitido. Mantener pruebas de contrato cruzadas adapter→Event Bus→worker y diferenciar evidencia de inferencia de evidencia auditada.
+
+## F4.3-F — Admission control del especialista real (validación local pendiente)
+- `SpecialistAdmissionGate`: semáforo justo, no bloqueante, capacidad 1..128 y lease `AutoCloseable` con liberación idempotente.
+- `RealSpecialistEventBus`: admisión antes de `executeBlocking`; rechaza inmediatamente con código Event Bus 429 cuando no hay capacidad; HTTP bloqueante continúa fuera del event loop.
+- Configuración `aies.execution.real-specialist.max-concurrent` (variable `AIES_EXECUTION_REAL_SPECIALIST_MAX_CONCURRENT`), por defecto 2. El flag de ejecución real sigue apagado por defecto.
+- No hay cola oculta, no se invocan modelos al rechazar y no se altera el contrato de correlación.
+- Limitación: límite por proceso JVM, no distribuido; la respuesta 429 llega al `ExecutionWorkerEngine` como error y su política durable de reintentos continúa aplicando. No se garantiza fairness entre procesos ni cancelación de inferencias que excedan el timeout del caller.
+
+### Verificación obligatoria
+```bash
+./gradlew :apps:control-plane:test --tests '*SpecialistAdmissionGateTest' --tests '*F43ERealSpecialistIntegrationTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### F4.3-G — Cierre de aceptación E2E real (siguiente)
+1. Harness opt-in de operador para workflow aprobado: intake → plan → ejecución → auditoría real → aceptación, sin auditorías fabricadas.
+2. Correlación y observabilidad de `workflowId/taskId/attemptId`, modelo efectivo, tiempos y artefactos SHA-256; evitar secretos en logs.
+3. Casos negativos con Ollama real y fixture determinista: saturación, timeout ambiguo, lease vencido, replay, auditoría rechazada y material alterado.
+4. Evidencia de persistencia tras reinicio y chequeo de que ningún DAG avanza sin auditoría exacta.
+5. Medir latencia de event loop y tamaño de pool; demostrar que JDBC/HTTP/archivos no corren en el event loop.
+6. Adjuntar resultados observados al PR. Si no se ejecuta el E2E real, mantener F4 abierto.
+
+### Aprendizaje F4.3-F
+Un worker pool no constituye control de admisión: es necesario limitar las inferencias **antes** de encolarlas. Evitar esperas y `Semaphore.acquire()` en el event loop. Mantener el límite explícito y verificable.
+
+### Después de F4
+- **F5**: herramientas de ingeniería autorizadas, sandbox, límites de recursos y auditoría de efectos.
+- **F6**: operación, métricas, resiliencia multiproceso, seguridad, runbooks y deuda Gradle.
