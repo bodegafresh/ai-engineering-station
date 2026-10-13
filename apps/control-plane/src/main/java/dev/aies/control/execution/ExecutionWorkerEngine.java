@@ -1,0 +1,75 @@
+package dev.aies.control.execution;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.aies.control.communication.*;
+import dev.aies.control.planning.PlanningContracts;
+import io.vertx.core.Vertx;
+import io.vertx.core.eventbus.DeliveryOptions;
+import io.vertx.core.json.JsonObject;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+/** One bounded, operator-triggered attempt. No shell, network or project writes here. */
+public final class ExecutionWorkerEngine {
+    public static final String EXECUTE = "aies.execution.specialist.execute.v1";
+    private final Vertx vertx;
+    private final ObjectMapper mapper;
+    private final Path root;
+    private final int maxAttempts;
+    private final long leaseSeconds;
+    private final int timeoutSeconds;
+    public ExecutionWorkerEngine(Vertx vertx, ObjectMapper mapper, Path root, int maxAttempts,
+                                 long leaseSeconds, int timeoutSeconds) {
+        if (maxAttempts < 1 || maxAttempts > 20 || leaseSeconds < 10 || leaseSeconds > 3600 ||
+            timeoutSeconds < 1 || timeoutSeconds >= leaseSeconds)
+            throw new IllegalArgumentException("Timeout must be shorter than lease");
+        this.vertx=vertx; this.mapper=mapper; this.root=root;
+        this.maxAttempts=maxAttempts; this.leaseSeconds=leaseSeconds; this.timeoutSeconds=timeoutSeconds;
+    }
+    public JsonObject runOne(String workflowId) throws Exception {
+        ExecutionDispatchPolicy.id(workflowId);
+        ExecutionHandoffStore.Work work;
+        PlanningContracts.Task task;
+        try (var store = handoff()) {
+            var claimed=store.claim(workflowId,maxAttempts,leaseSeconds);
+            if (claimed.isEmpty()) return new JsonObject().put("claimed",false);
+            work=claimed.get();
+            task=ExecutionWorkerPolicy.task(store.plan(workflowId),work.taskId(),work.specialistId());
+        }
+        try {
+            JsonObject request = new JsonObject()
+                .put("schemaVersion","1.0")
+                .put("workflowId",workflowId).put("taskId",work.taskId())
+                .put("specialistId",work.specialistId()).put("attemptId",work.leaseToken())
+                .put("objective",task.objective()).put("capability",task.capability())
+                .put("given",task.given()).put("when",task.when()).put("then",task.then());
+            JsonObject response=vertx.eventBus().<JsonObject>request(EXECUTE,request,
+                new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
+                .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();
+            String content=ExecutionWorkerPolicy.content(response);
+            var artifact=CommunicationContracts.validate(new CommunicationContracts.Artifact(
+                CommunicationContracts.VERSION,workflowId,work.taskId(),work.specialistId(),
+                "execution-result","text/markdown",content,List.of()));
+            String recordId;
+            try(var comm=new CommunicationStore(root.resolve("communication.sqlite"),mapper)) {
+                recordId=comm.append("ARTIFACT",workflowId,work.taskId(),artifact).id();
+            }
+            try(var store=handoff()) {
+                if(!store.stageEvidence(workflowId,work.taskId(),work.leaseToken(),recordId))
+                    throw new IllegalStateException("Lease expired before evidence staging");
+            }
+            // P1.5 must verify evidence and audit before COMPLETED.
+            return new JsonObject().put("claimed",true).put("taskId",work.taskId())
+                .put("status","EVIDENCE_PENDING_VERIFICATION")
+                .put("artifactRecordId",recordId);
+        } catch(Exception error) {
+            try(var store=handoff()) {store.fail(workflowId,work.taskId(),work.leaseToken(),true,maxAttempts);}
+            return new JsonObject().put("claimed",true).put("taskId",work.taskId())
+                .put("status","RETRY_PENDING").put("failureType",error.getClass().getSimpleName());
+        }
+    }
+    private ExecutionHandoffStore handoff() throws Exception {
+        return new ExecutionHandoffStore(root.resolve("execution-handoff.sqlite"),mapper);
+    }
+}
