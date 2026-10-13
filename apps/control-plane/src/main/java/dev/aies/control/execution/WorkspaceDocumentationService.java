@@ -99,7 +99,7 @@ public final class WorkspaceDocumentationService {
             markdown, java.util.List.of(WorkspaceMaterialEvidence.reference(root.relativize(output).toString(), documentSha))));
         String artifactId;
         try (var communication = new CommunicationStore(dataRoot.resolve("communication.sqlite"), mapper)) {
-            artifactId = communication.append("ARTIFACT", workflowId, taskId, artifact).id();
+            artifactId = communication.appendIdempotent("execution-"+attemptId+"-artifact", "ARTIFACT", workflowId, taskId, artifact).id();
         }
         try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"ARTIFACT_RECORDED",artifactId,root.relativize(output).toString(),documentSha);}
         return new JsonObject().put("status", "EVIDENCE_PENDING").put("workflowId", workflowId)
@@ -127,7 +127,7 @@ public final class WorkspaceDocumentationService {
             new String(bytes,StandardCharsets.UTF_8),java.util.List.of(WorkspaceMaterialEvidence.reference(root.relativize(output).toString(),documentSha))));
         String artifactId;
         try(var communication=new CommunicationStore(dataRoot.resolve("communication.sqlite"),mapper)) {
-            artifactId=communication.append("ARTIFACT",workflowId,taskId,artifact).id();
+            artifactId=communication.appendIdempotent("execution-"+attemptId+"-artifact", "ARTIFACT",workflowId,taskId,artifact).id();
         }
         try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"ARTIFACT_RECORDED",artifactId,root.relativize(output).toString(),documentSha);}
         return new JsonObject().put("status","EVIDENCE_PENDING").put("workflowId",workflowId)

@@ -155,9 +155,39 @@ public final class ExecutionHandoffStore implements AutoCloseable {
         requireActiveDocumentation(workflowId,taskId,attemptId,
             authorization(workflowId,taskId).orElseThrow().sourcePath(),
             authorization(workflowId,taskId).orElseThrow().sourceSha256());
-        try(var p=db.prepareStatement("INSERT INTO execution_attempt_effects(workflow_id,task_id,attempt_id,phase,artifact_id,document_path,document_sha256,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workflow_id,task_id,attempt_id) DO UPDATE SET phase=excluded.phase,artifact_id=excluded.artifact_id,document_path=excluded.document_path,document_sha256=excluded.document_sha256,updated_at=excluded.updated_at")) {
-            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);p.setString(4,phase);
-            p.setString(5,artifactId);p.setString(6,documentPath);p.setString(7,documentSha256);p.setString(8,Instant.now().toString());p.executeUpdate();
+        // A phase is monotonic: PREPARED -> FILE_WRITTEN -> ARTIFACT_RECORDED.
+        // Repeating the same phase with the same evidence is a no-op.
+        var current=effect(workflowId,taskId,attemptId);
+        if(current.isPresent()) {
+            var previous=current.get();
+            if(previous.phase().equals(phase)) {
+                if(!Objects.equals(previous.artifactId(),artifactId) ||
+                   !Objects.equals(previous.documentPath(),documentPath) ||
+                   !Objects.equals(previous.documentSha256(),documentSha256))
+                    throw new SecurityException("Conflicting effect replay");
+                return;
+            }
+            boolean next=("PREPARED".equals(previous.phase()) && "FILE_WRITTEN".equals(phase)) ||
+                         ("FILE_WRITTEN".equals(previous.phase()) && "ARTIFACT_RECORDED".equals(phase));
+            if(!next)throw new IllegalStateException("Invalid effect phase transition");
+            if("ARTIFACT_RECORDED".equals(phase) &&
+               (!Objects.equals(previous.documentPath(),documentPath) ||
+                !Objects.equals(previous.documentSha256(),documentSha256)))
+                throw new SecurityException("Material evidence changed during transition");
+            try(var p=db.prepareStatement("UPDATE execution_attempt_effects SET phase=?,artifact_id=?,document_path=?,document_sha256=?,updated_at=? WHERE workflow_id=? AND task_id=? AND attempt_id=? AND phase=?")) {
+                p.setString(1,phase);p.setString(2,artifactId);p.setString(3,documentPath);
+                p.setString(4,documentSha256);p.setString(5,Instant.now().toString());
+                p.setString(6,workflowId);p.setString(7,taskId);p.setString(8,attemptId);p.setString(9,previous.phase());
+                if(p.executeUpdate()!=1)throw new IllegalStateException("Concurrent effect transition");
+            }
+        } else {
+            if(!"PREPARED".equals(phase) || artifactId!=null || documentPath!=null || documentSha256!=null)
+                throw new IllegalStateException("Effect must begin at PREPARED");
+            try(var p=db.prepareStatement("INSERT INTO execution_attempt_effects(workflow_id,task_id,attempt_id,phase,artifact_id,document_path,document_sha256,updated_at) VALUES(?,?,?,?,?,?,?,?)")) {
+                p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);p.setString(4,phase);
+                p.setString(5,artifactId);p.setString(6,documentPath);p.setString(7,documentSha256);p.setString(8,Instant.now().toString());
+                p.executeUpdate();
+            }
         }
     }
     public record Effect(String phase,String artifactId,String documentPath,String documentSha256) {}
