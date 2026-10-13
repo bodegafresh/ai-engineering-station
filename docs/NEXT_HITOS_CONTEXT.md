@@ -237,3 +237,27 @@ git diff --check
 2. Recolección de IDs, tiempos, modelo efectivo, SHA-256 y persistencia tras reinicio; reporte versionado sin secretos.
 3. Negativos: timeout ambiguo, respuesta tardía, lease vencido, saturación, rechazo, replay, material alterado.
 4. Demostrar no bloqueo de event loop, límites de recursos y no duplicación de efectos; sin esto F4 sigue abierto.
+
+## F4.3-G2 — Ollama live semantic audit (opt-in; local validation required)
+- `F43G2OllamaAuditLiveTest`: real Ollama inference through Vert.x Event Bus, SQLite evidence staging, independent `SemanticAuditPolicy.review` using real Ollama, immutable audit record, `ExecutionQualityGate`, manifest and SQLite reopen.
+- Does **not** fabricate approval: model may approve or block; both outcomes are checked. Semantic failure fails closed. No project write grants, shell or Python.
+- `scripts/f43g2-live.sh`: loopback preflight and explicit opt-in; prints observed timings/IDs only after execution. Not run as part of ordinary `clean test`.
+- Important: the test wires the actual semantic policy behind a test-local Event Bus consumer; it is NOT a Quarkus deployment with the production `CommunicationEventBus`, HTTP intake or human operator approval. It does not validate material filesystem bytes.
+
+### Local validation
+```bash
+./gradlew :apps:control-plane:test --tests '*F43G2OllamaAuditLiveTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+bash scripts/f43g2-live.sh # requires local Ollama and downloaded model
+```
+
+### F4.3-G3 — Final operator E2E / F4 closure (next)
+1. Quarkus opt-in harness: actual HTTP intake, operator authorization and approval, plan, worker and production Event Bus consumers.
+2. Real semantic audit through production `CommunicationEventBus` with consistent data-root; capture audit ID and actual decision, no bypass.
+3. Verify durable claim, lease fencing, timeout ambiguity, retries, late responses and concurrent admission 429; no duplicate material effects.
+4. Explicit material grant and SHA-256 current-byte check when material writes are involved; reject tampering.
+5. Capture model identity, latency and event-loop/worker metrics without secrets; persist reproducible report in PR.
+6. Only close F4 after a successful real operator E2E. Then F5 tools and F6 operational hardening.
+
+### Lesson F4.3-G2
+Never equate real model inference with an operator-approved E2E. Semantic decisions must be persisted, matched to exact immutable artifact and rechecked by the quality gate; a BLOCKED result is valid evidence of fail-closed behavior.
