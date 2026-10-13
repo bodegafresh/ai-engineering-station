@@ -445,3 +445,19 @@ git diff --check
 - Corrected escaped `\\n` literals in `PlanningProvenance.embed`: actual LF delimiters are required for the canonical markdown section parser. The earlier implementation emitted literal backslash-n sequences, causing structural audit to reject valid plans and the Quarkus planning integration to fail closed.
 - The structural policy remains strict; no bypass or approval fabrication. Historical immutable rejected records remain unchanged. New workflow IDs are required for live recertification.
 - Run the targeted planning tests and full clean suite before merging. This package was syntax-checked, not Gradle-executed by its author.
+
+## F4.3-G10-D — Immutable planning revision lineage (implementation; local validation pending)
+- Adds `PlanningRevisionStore` and authenticated `PlanningRevisionResource`, opt-in via `AIES_PLANNING_REVISIONS_ENABLED=true` (defaults false).
+- Operator `POST /api/v1/planning/workflows/{parentId}/revisions` with JSON `{requestId,expectedParentAuditId,intake}` creates a **new workflow ID**, new intake and durable outbox event in the SAME SQLite transaction as append-only `planning_revisions` lineage. Parent must remain `REVISION_REQUIRED` and audit ID must match exactly; parent plan, artifact and audit are NEVER overwritten.
+- `GET /api/v1/planning/revisions/{requestId}` enables read-only reconciliation after ambiguous HTTP timeouts. Same idempotency request replays with 200; different payload under same key conflicts with 409. New child returns 201, starts `RECEIVED`, must pass normal planning/semantic audit before import. Depth bounded to 3, unchanged intake rejected, collisions rollback.
+- No automatic revision from LLM, no synthetic APPROVED audit, no direct specialist invocation or execution. Internal workflow uses existing durable outbox and Vert.x Event Bus.
+- JUnit coverage for durable replay after restart, parent immutability, stale audit, empty revision, ID collisions and rollback. **Local Gradle/Quarkus/Ollama runs not performed by artifact producer.**
+- Caveats: `planning_revisions` is append-only by application convention, not SQL triggers; DBA-level tampering remains possible. Request hash is canonical Jackson serialization of validated intake (not a signature). Parent audit ID is compared to the persisted snapshot, but this endpoint does not independently recalculate immutable audit record bytes. GET `status=RECEIVED` describes creation state, not live child state; inspect child workflow via existing planning GET.
+- Operational warning: use `AIES_WORKSPACE_CHANGES_TOKEN` as the centralized operator credential. Do not print or commit token. This feature does not repair earlier G5/G6 operator scripts.
+- **F4 remains OPEN.** G10-E next: production operator certification script hardening (two-phase resume, 404 non-JSON, schema validation, no token argv leakage, restart snapshots, fixture tests). G10-F real Quarkus/Ollama evidence; G10-G negative security/lease/saturation/material tests. No F5 until F4 closure.
+### Local verification
+```bash
+./gradlew :apps:control-plane:test --tests '*PlanningRevisionStoreTest' --tests '*PlanningRestIntegrationTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
