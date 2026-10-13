@@ -99,8 +99,7 @@ public class PlanningEventBus {
       "## Requirements and task assignments\\n\\n"+
       mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot.plan())+
       "\\n\\n## State\\nPRE-EXECUTION PLAN. No implementation or empirical results claimed.\\n";
-    var artifact=CommunicationContracts.validate(new CommunicationContracts.Artifact("1.0",id,
-      "planning-contract","planning-controller","planning-plan","text/markdown",content,List.of()));
+    var artifact=PlanningArtifactEvidence.artifact(snapshot.intake(),snapshot.plan(),content);
     var saved=comm.append("ARTIFACT",id,"planning-contract",artifact);
     if(!store.attachArtifact(id,saved.id()))throw new IllegalStateException("Concurrent plan update");
     recordId=saved.id();

@@ -351,3 +351,50 @@ git diff --check
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
+
+## F4.3-G9 — Read-only restart state certification (operator run required)
+- `scripts/f43g9-restart-certify.sh` captures canonical acceptance and durable recovery state before/after a manually controlled Quarkus restart, using existing authenticated production REST endpoints.
+- Explicitly rejects wrong-token access; verifies workflow correlation and response contracts; compares exact task IDs, statuses, attempts, artifact/audit IDs and SHA-256, recovery diagnoses and attempt IDs. Optional `AIES_CERT_REQUIRE_MATERIAL=true` enforces material acceptance current-byte checks in both phases.
+- Strict loopback-only, read-only, no automatic retry of model, no workflow mutation. `AIES_WORKSPACE_CHANGES_TOKEN` is canonical. Reports saved with umask 077 and no token or full model content.
+- This does not cause a crash, prove model execution/latency, 429, concurrency or guarantee an atomic snapshot. Failures require manual reconciliation. F4 stays OPEN pending observed full E2E evidence.
+### Validate
+```bash
+bash -n scripts/f43g9-restart-certify.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+## F4.3-G10-A — Planning provenance preservation (first increment; F4 OPEN)
+
+### Observed production failure (2026-10-13)
+- Operator workflow `wf-cert-20261013034306` reached `REVISION_REQUIRED`, not approved. Planning artifact `0ef3defe-428f-4484-9f21-5fb43e42a84a` contained `sourceRefs: []` despite an intake source `src1`; audit `b0590c86-35c7-49fb-90e1-c891365246b3` complained about missing source traceability, task costs and acceptance criteria.
+- The plan JSON already had `sourceId`, `specialistCost`, `specialistId`, Given/When/Then, and a budget. Do not treat every model finding as proven. Audit reported `structural-quality-auditor` but semantic auditing may have run after structural checks; auditor name alone does not establish model identity.
+- G9 restart certification cannot run without an imported execution workflow; HTTP 404 and empty `execution_tasks` are expected before successful approved planning/import. No fabricated approval or DB mutation.
+
+### Delivered G10-A scope
+- `PlanningArtifactEvidence` derives immutable `sourceRefs` from validated intake sources actually used by plan requirements, preserving source order. Validates workflow correlation, requirement identity and task Given/When/Then/verification linkage; rejects mismatches before writing a planning artifact.
+- `PlanningEventBus.prepareAudit` uses this evidence builder in place of `List.of()` for `sourceRefs`. No schema changes, external model calls, new REST endpoints or automatic retries.
+- Focused unit tests: source preservation, mismatched workflow and changed task acceptance criteria.
+- Existing records are immutable: previously rejected workflow must remain rejected. Create a **new** workflow ID/intake for a new certification; never overwrite the original audit.
+
+### Next mandatory increments before F4 closure
+1. **G10-B — Contract-aware deterministic planning audit.** Parse the exact persisted `planning-plan` representation, validate sourceRefs against authoritative intake, requirement→task coverage, DAG, per-task specialistCost and budget, and Given/When/Then. Emit machine-readable finding codes with precise fields. No lenient substring checks, no approving incomplete plans. Ensure sourceRefs are meaningful evidence references, not proof of external material existence.
+2. **G10-C — Semantic audit evidence.** Persist whether semantic review ran, actual model identifier/version if observed, timing, structural and semantic finding origins, timeout/429 outcomes; reject false assertions about Ollama. Keep structural fail-closed and semantic opt-in.
+3. **G10-D — Revision lifecycle.** Immutable new artifact per revision, explicit operator acknowledgement, bounded retries, replay/idempotency and lineage to original audit. Do not auto-retry a rejected immutable subject.
+4. **G10-E — Operator certification harness.** Fix G5/G6 shell assumptions and test them: unset poll defaults under `set -u`, 404 non-JSON preflight, `curl` credential exposure in process args, response schema, two-phase resume, clear error codes. Verify centralized `AIES_WORKSPACE_CHANGES_TOKEN` only; no secret output.
+5. **G10-F — Runtime negative evidence.** Run real Quarkus + Ollama planning → approved audit → import → real specialist → quality audit → canonical acceptance; verify material bytes if applicable. Exercise crash/restart (G9), expired lease, timeout/late reply, 429, concurrency, tamper, auth rejection, replay and event-loop latency with measured timestamps. Persist sanitized evidence in PR.
+6. **F4 closure gate.** All applicable production paths and negative cases must have observed results, stable CI regression, verified audit/artifact hashes, zero false unlocks, and an explicit operator sign-off. Until then F4 remains **OPEN**; F5 must not be declared started based on these partial slices.
+
+### G10-A validation (run in target checkout)
+```bash
+bash -n scripts/install.sh  # installer from archive, before installation
+./gradlew :apps:control-plane:test --tests '*PlanningArtifactEvidenceTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*PlanningRestIntegrationTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Important limitations
+- The source digest in intake is format-validated, **not** independently verified against external source bytes; no new claim of content integrity is made.
+- Source references alone do not guarantee the semantic auditor will approve. An immutable revision and audit are still required.
+- These tests are supplied but Gradle/Quarkus/Ollama execution is not claimed by the ZIP producer.
