@@ -36,7 +36,12 @@ public final class SqliteTaskRepository implements TaskRepository {
         try (Statement s = c.createStatement()) { s.execute("ALTER TABLE tasks ADD COLUMN " + column + " " + declaration); }
     }
     private Connection open() throws SQLException {
-        Connection c = DriverManager.getConnection(jdbcUrl);
+        Connection c = new org.sqlite.JDBC()
+            .connect(jdbcUrl, new java.util.Properties());
+
+        if (c == null) {
+            throw new SQLException("SQLite JDBC rejected URL: " + jdbcUrl);
+        }
         try (Statement s = c.createStatement()) { s.execute("PRAGMA busy_timeout=5000"); }
         return c;
     }
@@ -53,6 +58,13 @@ public final class SqliteTaskRepository implements TaskRepository {
     @Override public Task create(String objective) {
         UUID id=UUID.randomUUID(); Instant now=Instant.now();
         Task task=new Task(id,objective,TaskStatus.PENDING,now,now);
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open()) {
             c.setAutoCommit(false);
             try {
@@ -66,12 +78,26 @@ public final class SqliteTaskRepository implements TaskRepository {
         return task;
     }
     @Override public Optional<Task> find(UUID id) {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open(); PreparedStatement s=c.prepareStatement("SELECT * FROM tasks WHERE id=?")) {
             s.setString(1,id.toString());
             try (ResultSet r=s.executeQuery()) { return r.next()?Optional.of(read(r)):Optional.empty(); }
         } catch (SQLException e) { throw new IllegalStateException("Cannot read task",e); }
     }
     @Override public boolean cancel(UUID id) {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c = open()) {
             c.setAutoCommit(false);
             try {
@@ -95,6 +121,13 @@ public final class SqliteTaskRepository implements TaskRepository {
     }
     @Override public Optional<Claim> claimNext(Duration lease, int maxAttempts) {
         if (lease.isZero() || lease.isNegative() || maxAttempts<1) throw new IllegalArgumentException("Invalid claim policy");
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open()) {
             c.setAutoCommit(false);
             try {
@@ -117,6 +150,13 @@ public final class SqliteTaskRepository implements TaskRepository {
         } catch (Exception e) { throw new IllegalStateException("Cannot claim task",e); }
     }
     private boolean finish(Claim claim, String status, String reason) {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open()) {
             c.setAutoCommit(false);
             try {
@@ -134,6 +174,13 @@ public final class SqliteTaskRepository implements TaskRepository {
     @Override public boolean completeWithResult(Claim claim, String result, String model) {
         if(result==null || result.isBlank() || model==null || model.isBlank())
             throw new IllegalArgumentException("A non-empty response and model are required");
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open()) {
             c.setAutoCommit(false);
             try {
@@ -150,6 +197,13 @@ public final class SqliteTaskRepository implements TaskRepository {
         } catch (Exception e) { throw new IllegalStateException("Cannot persist model response",e); }
     }
     @Override public Optional<TaskResult> findResult(UUID id) {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open();PreparedStatement s=c.prepareStatement("SELECT id,model_name,model_response,updated_at FROM tasks WHERE id=? AND status='COMPLETED' AND model_response IS NOT NULL")) {
             s.setString(1,id.toString());
             try(ResultSet r=s.executeQuery()) {
@@ -162,6 +216,13 @@ public final class SqliteTaskRepository implements TaskRepository {
     @Override public int recoverExpired(int maxAttempts) {
         if(maxAttempts<1) throw new IllegalArgumentException("maxAttempts");
         String now=Instant.now().toString();
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open()) {
             c.setAutoCommit(false);
             try {
@@ -186,6 +247,13 @@ public final class SqliteTaskRepository implements TaskRepository {
     @Override public int publishOutbox(OutboxPublisher publisher,int limit) {
         if(limit<1) return 0;
         int published=0;
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "SQLite JDBC driver is not available", e
+            );
+        }
         try (Connection c=open(); PreparedStatement s=c.prepareStatement("SELECT id,event_type,payload FROM outbox WHERE delivered_at IS NULL ORDER BY id LIMIT ?")) {
             s.setInt(1,limit);
             try (ResultSet r=s.executeQuery()) {
