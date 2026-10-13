@@ -339,3 +339,15 @@ git diff --check
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
+
+## F4.3-G8 — Read-only durable recovery diagnosis (local validation pending)
+- New opt-in `GET /api/v1/execution/workflows/{id}/recovery` with centralized workspace token, feature flags default off and `@Blocking` JDBC.
+- Inspects durable task states, leases and model invocation reservations/effect phases. Never retries ambiguous calls, resets leases, approves audits, or modifies material. Identifies `AMBIGUOUS_INVOCATION`, `FILE_RECOVERY_REQUIRED` and expired leases for operator investigation.
+- Tests cover fail-closed state classification and default-off HTTP access.
+- Limitations: cross-connection point-in-time snapshot, no active Ollama runtime telemetry, no crash simulation or material-byte verification. F4 remains OPEN until measured end-to-end validation.
+### Validation
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionRecoveryReportTest' --tests '*ExecutionRecoveryResourceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
