@@ -75,7 +75,7 @@ public final class ExecutionQualityGate {
             if (!"APPROVED".equals(decision))
                 return new JsonObject().put("status", "EVIDENCE_PENDING")
                     .put("decision", decision).put("auditRecordId", auditId);
-            boolean changed = execution.approveEvidence(workflowId, taskId, evidenceRef, auditId);
+            boolean changed = execution.approveVerifiedEvidence(workflowId, taskId, evidenceRef, auditId, communication, workspaceRoot);
             return new JsonObject().put("status", changed ? "COMPLETED" : "CONFLICT")
                 .put("decision", decision).put("auditRecordId", auditId);
         }

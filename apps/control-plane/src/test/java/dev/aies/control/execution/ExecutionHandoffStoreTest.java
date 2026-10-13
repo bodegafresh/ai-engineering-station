@@ -26,10 +26,11 @@ class ExecutionHandoffStoreTest {
         try(var store=new ExecutionHandoffStore(file,new ObjectMapper())) {
             assertTrue(store.stageEvidence("wf-execution","a",token,"artifact-a"));
             assertTrue(store.claim("wf-execution",3,60).isEmpty());
-            assertTrue(store.approveEvidence("wf-execution","a","artifact://communication/artifact-a","audit-a"));
-            assertFalse(store.approveEvidence("wf-execution","a","artifact://communication/artifact-a","audit-a"));
-            assertEquals("audit-a",store.approvedAuditId("wf-execution","a").orElseThrow());
-            assertEquals("b",store.claim("wf-execution",3,60).orElseThrow().taskId());
+            assertThrows(UnsupportedOperationException.class, () ->
+                store.approveEvidence("wf-execution","a","artifact://communication/artifact-a","audit-a"));
+            assertEquals("EVIDENCE_PENDING",store.list("wf-execution").get(0).status());
+            assertTrue(store.approvedAuditId("wf-execution","a").isEmpty());
+            assertTrue(store.claim("wf-execution",3,60).isEmpty());
         }
     }
     @Test void rejectsConflictingPlanAndCycles() throws Exception {

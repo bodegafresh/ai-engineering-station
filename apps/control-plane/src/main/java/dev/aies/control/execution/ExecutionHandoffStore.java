@@ -270,16 +270,56 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             return p.executeUpdate()==1;
         }
     }
-    /** Complete only the exact staged artifact after independently verified audit approval. */
+    /** Legacy unverified transition is intentionally disabled, even for internal callers. */
+    @Deprecated(forRemoval = true)
     public synchronized boolean approveEvidence(String workflowId, String taskId,
-                                                  String evidenceRef, String auditRecordId) throws Exception {
+                                                  String evidenceRef, String auditRecordId) {
+        throw new UnsupportedOperationException("Use approveVerifiedEvidence with durable audit verification");
+    }
+
+    /** The persistence boundary rechecks canonical records; Event Bus replies are not authority. */
+    public synchronized boolean approveVerifiedEvidence(String workflowId, String taskId,
+            String evidenceRef, String auditRecordId,
+            dev.aies.control.communication.CommunicationStore communication,
+            java.nio.file.Path workspaceRoot) throws Exception {
         dev.aies.control.communication.CommunicationContracts.id(workflowId);
         dev.aies.control.communication.CommunicationContracts.id(taskId);
         dev.aies.control.communication.CommunicationContracts.id(auditRecordId);
-        if (evidenceRef == null || !evidenceRef.startsWith("artifact://communication/"))
-            throw new IllegalArgumentException("Invalid evidence reference");
+        Objects.requireNonNull(communication);
+        // First check the exact staged reference. Replays of an already completed
+        // task are a no-op; conflicting attempts fail closed.
+        try (var p = db.prepareStatement("SELECT status,evidence_ref,audit_record_id FROM execution_tasks WHERE workflow_id=? AND task_id=?")) {
+            p.setString(1,workflowId);p.setString(2,taskId);
+            try (var rs = p.executeQuery()) {
+                if (!rs.next()) throw new IllegalArgumentException("Unknown task");
+                if ("COMPLETED".equals(rs.getString(1))) {
+                    if (Objects.equals(evidenceRef,rs.getString(2)) && Objects.equals(auditRecordId,rs.getString(3))) return false;
+                    throw new SecurityException("Conflicting completion replay");
+                }
+                if (!"EVIDENCE_PENDING".equals(rs.getString(1)) || !Objects.equals(evidenceRef,rs.getString(2)))
+                    throw new SecurityException("Evidence not staged for task");
+            }
+        }
+        var evidence = ExecutionEvidenceVerifier.verify(communication,workflowId,taskId,evidenceRef);
+        var artifact = (dev.aies.control.communication.CommunicationContracts.Artifact) evidence.payload();
+        if (artifact.sourceRefs().stream().anyMatch(ref -> ref.startsWith(WorkspaceMaterialEvidence.PREFIX))) {
+            if (workspaceRoot == null) throw new SecurityException("Material verification not configured");
+            WorkspaceMaterialEvidence.verify(workspaceRoot,artifact);
+        }
+        var auditRecord = communication.find(auditRecordId).orElseThrow(
+            () -> new SecurityException("Audit record missing"));
+        if (!"AUDIT".equals(auditRecord.kind()) || !workflowId.equals(auditRecord.workflowId())
+                || !taskId.equals(auditRecord.taskId())) throw new SecurityException("Audit ownership mismatch");
+        if (!(auditRecord.payload() instanceof dev.aies.control.communication.CommunicationContracts.Audit audit))
+            throw new SecurityException("Invalid audit payload");
+        dev.aies.control.communication.CommunicationContracts.validate(audit);
+        if (!workflowId.equals(audit.workflowId()) || !evidence.id().equals(audit.subjectId())
+                || audit.decision() != dev.aies.control.communication.CommunicationContracts.AuditDecision.APPROVED)
+            throw new SecurityException("Audit not approved for staged evidence");
+        // The immutable evidence record includes a checked SHA-256. For material
+        // evidence, the current file digest is checked above before this CAS.
         try (var p = db.prepareStatement("UPDATE execution_tasks SET status='COMPLETED',audit_record_id=?,updated_at=? WHERE workflow_id=? AND task_id=? AND status='EVIDENCE_PENDING' AND evidence_ref=?")) {
-            p.setString(1,auditRecordId);p.setString(2,java.time.Instant.now().toString());
+            p.setString(1,auditRecordId);p.setString(2,Instant.now().toString());
             p.setString(3,workflowId);p.setString(4,taskId);p.setString(5,evidenceRef);
             return p.executeUpdate()==1;
         }
