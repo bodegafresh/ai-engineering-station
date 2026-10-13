@@ -1,64 +1,49 @@
-# AIES — continuidad después de F2 (workspace documentation)
+# AIES — Continuidad tras F3 (execution integrity slice)
 
-Baseline inspeccionado: `main` commit `301bde7216e37261719a6b28652550d9fc83bc5c`, merge PR #40.
+**Base verificada en GitHub:** `main` commit `e0feca25773a7b8ce60508000f8f657cac81b39e` (PR #41). **No se ejecutó Gradle en el entorno de empaquetado**: la aceptación depende de `clean test` y pruebas de integración en Fedora.
 
-## Arquitectura y objetivo
+## Cambios de F3 entregados
 
-AIES conserva intake universal, metodología, planificación, DAG durable, especialistas existentes, Event Bus interno, comunicación canónica, auditoría y quality gate. F2 añade **una operación explícita, opt-in y aprobada por operador** para documentar un archivo Java real. No crea un segundo catálogo, ni un framework de agentes, ni un ejecutor de shell. `software-engineer/software` reutiliza el ID/capacidad del catálogo existente.
+1. `ExecutionWorkerEngine` rechaza respuestas sin correlación exacta `workflowId`, `taskId`, `attemptId` (lease token) antes de crear artefactos.
+2. `ExecutionHandoffStore.complete()` heredado falla cerrado. No permite completar con URLs o referencias no auditadas.
+3. Migración SQLite aditiva `audit_record_id` en `execution_tasks`, persistido en la misma actualización que marca `COMPLETED`; consulta `approvedAuditId` para manifiestos futuros.
+4. Test existente de DAG actualizado para usar `stageEvidence` → `approveEvidence`, demostrando que una dependencia no se libera mientras espera aprobación.
 
-## F2 entregado
+## Límites explícitos: F3 todavía NO está cerrado completamente
 
-- `WorkspaceDocumentationService`: valida `workflowId`, `taskId`, `attemptId`, aprobación explícita, ruta relativa, archivo Java regular dentro del workspace, no symlinks, tamaño máximo y límite de prompt. Lee el contenido real, calcula SHA-256, solicita inferencia mediante `OllamaSpecialistExecutor`, verifica correlación de intento, escribe Markdown en `.aies/generated-docs/` mediante archivo temporal y movimiento atómico, calcula SHA-256 de salida y crea un artefacto canónico `execution-result` en `CommunicationStore`.
-- `WorkspaceDocumentationEventBus`: dirección `aies.execution.documentation.generate.v1`, consumidor local opt-in, procesamiento bloqueante delegado por Vert.x; REST no expuesto.
-- Tests: rechazos por aprobación, path traversal, ruta absoluta, archivo no Java, symlink; petición HTTP real a un servidor de prueba, archivo material y artefacto durable.
-- Configuración por defecto deshabilitada: `AIES_EXECUTION_DOCUMENTATION_ENABLED=false`, `AIES_EXECUTION_DOCUMENTATION_WORKSPACE_ROOT=./projects`, `AIES_EXECUTION_DOCUMENTATION_TIMEOUT_SECONDS=90`.
+- `approveEvidence` sigue siendo un método público del store; **el llamador debe validar la auditoría**. `ExecutionQualityGate` sí valida la identidad y decisión del registro, pero aún falta hacer inaccesible la transición desde consumidores no autorizados (p. ej. encapsular mediante servicio de dominio o exigir prueba verificable dentro de la misma transacción).
+- `ExecutionWorkerEngine` aún escribe el artefacto en `communication.sqlite` antes de `stageEvidence` en otra base. Una caída entre ambas deja artefactos huérfanos; falta inbox/outbox/reconciliación durable y claves de idempotencia por intento.
+- `WorkspaceDocumentationService` aún opera por comando explícito separado del DAG. Integración del capability adapter y autorización de operador **pendientes**.
+- `ExecutionQualityGate` verifica contenido canónico, no todavía el archivo material y SHA-256 de F2. Falta verificación de filesystem antes de auditoría.
+- Fencing de lease en filesystem, reinicio durante ejecución, pruebas con duplicados y concurrencia multiinstancia aún pendientes.
+- `ExecutionWorkerEngine` captura fallos de correlación y los trata como retryable; evaluar clasificación permanente y métrica de seguridad.
 
-**Límite fundamental:** F2 NO enlaza automáticamente la operación documental con `ExecutionWorkerEngine.runOne`, ni ejecuta el Quality Gate, ni finaliza tareas. La operación requiere solicitud interna explícita con `approved=true`; no equivale a autenticación del llamante, por lo que se debe restringir el emisor del Event Bus a código de operador autorizado. No habilitar con entrada de usuario sin autorización real. El SHA-256 demuestra integridad de bytes, no exactitud semántica del documento. La persistencia del archivo y la base de datos no es una transacción atómica; el replay puede encontrar un archivo ya creado y requiere reconciliación. El documento creado no es un test de código ejecutado.
+## F3.2 — Cierre del circuito durable (siguiente prioridad)
 
-## Contrato interno para F2
+1. Definir un `ExecutionResult` versionado para todos los especialistas: identidad de intento, artefactos, hashes, capacidad y estado `UNVERIFIED`; adaptarlo al Event Bus existente sin otro catálogo.
+2. Persistir journal de intento (`workflowId`,`taskId`,`attemptId`) y reconciliar respuestas duplicadas / artefactos huérfanos con reglas deterministas.
+3. Introducir capability adapter entre worker y documentación F2, con `sourcePath` persistido y aprobación de operador no autoafirmada; jamás inferir rutas con LLM.
+4. Verificar SHA-256 del archivo material y del origen antes de aprobar; denegar archivos inexistentes, mutados o symlinks.
+5. Pruebas de caída después de escritura, replay idempotente, lease vencido, intento ajeno, auditoría rechazada y dependencia bloqueada.
+6. Revisar la API pública de `approveEvidence` para impedir bypass de calidad desde cualquier caller.
 
-Solicitud a `aies.execution.documentation.generate.v1`:
+## F4 — Primer E2E y entrega final
 
-```json
-{"workflowId":"wf-1","taskId":"task-1","attemptId":"attempt-1","approved":true,"sourcePath":"src/main/java/example/A.java"}
-```
+- Crear manifiesto durable por workflow con `COMPLETED`, `PARTIAL`, `BLOCKED`, y trazabilidad requisito → tarea → archivo/hash → artifactId → auditRecordId.
+- Ejecutar caso documental vertical: intake → plan aprobado → claim → ejecución autorizada en workspace → archivo real → validación hash → auditoría → manifiesto. Probar con Ollama HTTP simulado y opcionalmente Ollama real.
+- Incluir reinicio entre persistencias, repetición de mensajes, dependencias DAG y salida con auditoría negativa. No reportar E2E completo antes de estas pruebas.
 
-Respuesta: `status=EVIDENCE_PENDING`, `documentPath`, `documentSha256`, `sourcePath`, `sourceSha256`, `artifactRecordId`, `verification=FILE_HASH_VERIFIED_NOT_AUDITED`. No implica `COMPLETED`.
+## F5 — Software agent tools
 
-## Aprendizajes para definiciones de especialistas
+- Reutilizar mecanismos existentes de workspace changes y Docker verification; comandos allowlist, aprobación humana, red deshabilitada, límites, rollback y evidencia real de exit code y logs.
+- Mantener reglas técnicas versionadas en `TechnicalSpecialistGuidance`: distinguir resultados observados de inferencias, no afirmar pruebas no ejecutadas; agregar pruebas de regresión para conflictos `Path`, `JsonObject.remove`, SQLite JDBC y validaciones de contratos. No autoeditar catálogo de capacidades.
 
-**Especialista técnico (`software-engineer`)**: añadir en su definición de prompts/competencias que (1) diferencie inspección real del repositorio de inferencia textual; (2) cite rutas relativas y hashes reales aportados por herramientas; (3) no afirme tests ejecutados sin logs/exit codes; (4) separe hallazgos observados de suposiciones; (5) produzca documentación de API pública, dependencias, limitaciones y pasos de verificación; (6) no invente comandos ni resultados. Mantener estas instrucciones como políticas versionadas del especialista, no como memoria libre ni cambio automático de capacidades. No cambiar `SpecialistCatalog` sin revisión de capacidades y pruebas.
-
-## F3 — seguridad, correlación y recuperación (bloqueante para E2E autónomo)
-
-1. Enlazar el worker y la herramienta de documentación por un adaptador de capacidades del catálogo existente; trasladar `sourcePath` y autorización a un contrato durable explícito, sin extraer rutas del objetivo con LLM.
-2. Validar `attemptId` en `ExecutionWorkerEngine` antes de aceptar respuesta y añadir pruebas de intento tardío, duplicado y lease vencido.
-3. Cerrar `ExecutionHandoffStore.complete()` para impedir `COMPLETED` con URL o referencia no auditada; migrar consumidores con compatibilidad explícita.
-4. Vincular `auditRecordId` de manera durable al estado aprobado; exigir validación material del archivo y del hash antes de auditar, además del registro canónico.
-5. Introducir reconciliación idempotente para archivos/artefactos huérfanos entre filesystem, `communication.sqlite` y `execution-handoff.sqlite`; registrar intentos y estado terminal.
-6. Reforzar autorización real de la operación: token/identidad de operador, controles por workspace y evitar que el flag `approved` sea autoafirmado por el modelo.
-7. Seguridad de filesystem: comprobar hardlinks, cambios concurrentes de rutas y symlinks; usar mecanismos de acceso seguro o workspace aislado cuando se amplíe la superficie. Añadir límites de volumen y limpieza.
-
-## F4 — entrega final y E2E
-
-- Manifiesto durable de workflow con estados `COMPLETED`, `PARTIAL`, `BLOCKED`; trazabilidad requisito→tarea→archivo/hash→artefacto→auditoría; consulta REST autorizada.
-- E2E automático con servidor HTTP simulado: intake→plan auditado→worker→herramienta real→archivo→verificación material→auditoría→manifiesto; E2E opt-in con Ollama local real.
-- Pruebas de caída entre escritura y registro, reintento, dependencia DAG, auditoría rechazada y recuperación.
-
-## F5 — agente de software con herramientas
-
-Herramientas allowlist, workspace aislado, revisión de cambios, aprobación humana, test runner en contenedor sin red, evidencia de comandos reales/exit codes, rollback y límites de costo. Nunca dar acceso arbitrario a shell por prompt.
-
-## Verificación local
+## Validación y operación
 
 ```bash
-./gradlew :apps:control-plane:test --tests '*WorkspaceDocumentationServiceTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*ExecutionHandoffStoreTest' --no-daemon --console=plain
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
 
-No considerar F2 E2E completo hasta implementar y demostrar F3 y F4.
-
-### Política incorporada en código
-
-`TechnicalSpecialistGuidance.VERSION=f2.1` centraliza instrucciones revisables para `software-engineer`, aplicadas al prompt del documentador. Es una política explícita y versionada, **no** aprendizaje automático ni modificación silenciosa del catálogo de especialistas.
+**Nota de compatibilidad:** cualquier consumidor del método heredado `complete()` deberá migrar a la transición auditada. El cambio es intencionalmente fail-closed y puede afectar tests o integraciones externas que usaban esa vía insegura.

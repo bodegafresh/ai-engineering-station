@@ -47,6 +47,11 @@ public final class ExecutionWorkerEngine {
             JsonObject response=vertx.eventBus().<JsonObject>request(EXECUTE,request,
                 new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
                 .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();
+            // Reject stale, cross-workflow and cross-task replies before writing artifacts.
+            if (response == null || !work.leaseToken().equals(response.getString("attemptId"))
+                    || !workflowId.equals(response.getString("workflowId"))
+                    || !work.taskId().equals(response.getString("taskId")))
+                throw new SecurityException("Specialist response correlation mismatch");
             String content=ExecutionWorkerPolicy.content(response);
             var artifact=CommunicationContracts.validate(new CommunicationContracts.Artifact(
                 CommunicationContracts.VERSION,workflowId,work.taskId(),work.specialistId(),
