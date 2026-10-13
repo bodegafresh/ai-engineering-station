@@ -14,6 +14,7 @@ public final class CommunicationQualityPolicy {
             if (m.instructions().isEmpty()) issues.add("Missing instructions");
             if (m.expectedOutputs().isEmpty()) issues.add("Missing expected outputs");
         } else if (record.payload() instanceof CommunicationContracts.Artifact a) {
+            if ("planning-plan".equals(a.kind())) return PlanningArtifactQualityPolicy.findings(a);
             if (a.content().strip().length() < 100) issues.add("Artifact needs more substantive content");
             if (a.contentType().equals("text/markdown") && !a.content().contains("#"))
                 issues.add("Markdown artifact needs a heading");

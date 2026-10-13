@@ -95,10 +95,11 @@ public class PlanningEventBus {
      .put("recordId",snapshot.artifactRecordId());
    String recordId=snapshot.artifactRecordId();
    if("AUDIT_REQUIRED".equals(snapshot.status())){
-    String content="# Planning contract: "+snapshot.plan().objective()+"\\n\\n"+
-      "## Requirements and task assignments\\n\\n"+
-      mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot.plan())+
-      "\\n\\n## State\\nPRE-EXECUTION PLAN. No implementation or empirical results claimed.\\n";
+    String content = "# Planning contract: " + snapshot.plan().objective() + "\n\n"
+    + "## Requirements and task assignments\n\n"
+    + mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot.plan())
+    + "\n\n## State\n"
+    + "PRE-EXECUTION PLAN. No implementation or empirical results claimed.\n";
     var artifact=PlanningArtifactEvidence.artifact(snapshot.intake(),snapshot.plan(),content);
     var saved=comm.append("ARTIFACT",id,"planning-contract",artifact);
     if(!store.attachArtifact(id,saved.id()))throw new IllegalStateException("Concurrent plan update");
