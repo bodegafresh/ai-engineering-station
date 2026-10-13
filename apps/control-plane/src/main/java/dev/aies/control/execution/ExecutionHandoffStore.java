@@ -83,7 +83,12 @@ public final class ExecutionHandoffStore implements AutoCloseable {
     public synchronized Optional<Work> claim(String workflowId, int maxAttempts, long leaseSeconds) throws Exception {
         if (maxAttempts < 1 || maxAttempts > 20 || leaseSeconds < 10 || leaseSeconds > 3600)
             throw new IllegalArgumentException("Invalid lease policy");
-        db.setAutoCommit(false);
+        // Acquire the writer reservation BEFORE reading the DAG snapshot.
+        // A deferred read transaction can fail with SQLITE_BUSY_SNAPSHOT on upgrade.
+        // Keep JDBC autocommit enabled: do not nest BEGIN within setAutoCommit(false).
+        try (var transaction = db.createStatement()) {
+            transaction.execute("BEGIN IMMEDIATE");
+        }
         try {
             PlanningContracts.Plan plan;
             try (var p = db.prepareStatement("SELECT plan_json FROM execution_workflows WHERE workflow_id=?")) {
@@ -101,14 +106,20 @@ public final class ExecutionHandoffStore implements AutoCloseable {
                     p.setString(1,token);p.setString(2,now.plusSeconds(leaseSeconds).toString());p.setString(3,now.toString());
                     p.setString(4,workflowId);p.setString(5,task.id());p.setInt(6,maxAttempts);p.setString(7,now.toString());
                     if (p.executeUpdate() == 1) {
-                        db.commit();
+                        commitClaimTransaction();
                         return list(workflowId).stream().filter(w -> w.taskId().equals(task.id())).findFirst();
                     }
                 }
             }
-            db.commit();return Optional.empty();
-        } catch(Exception e) {db.rollback();throw e;}
-        finally {db.setAutoCommit(true);}
+            commitClaimTransaction();return Optional.empty();
+        } catch(Exception e) {rollbackClaimTransaction();throw e;}
+
+    }
+    private void commitClaimTransaction() throws SQLException {
+        try (var statement = db.createStatement()) { statement.execute("COMMIT"); }
+    }
+    private void rollbackClaimTransaction() throws SQLException {
+        try (var statement = db.createStatement()) { statement.execute("ROLLBACK"); }
     }
     /** Durable, immutable operator authorization for one task. Replays with different inputs fail closed. */
     public synchronized boolean authorizeCapability(ExecutionCapabilityAuthorization a) throws Exception {
