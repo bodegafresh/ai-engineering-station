@@ -261,3 +261,25 @@ bash scripts/f43g2-live.sh # requires local Ollama and downloaded model
 
 ### Lesson F4.3-G2
 Never equate real model inference with an operator-approved E2E. Semantic decisions must be persisted, matched to exact immutable artifact and rechecked by the quality gate; a BLOCKED result is valid evidence of fail-closed behavior.
+
+## F4.3-G3 — Timeout / late reply fencing (incremento; F4 aún abierto)
+- Test `F43G3TimeoutRecoveryTest`: consumidor Vert.x real que responde tarde; el worker usa un timeout acotado, agota su intento, persiste DEAD en SQLite y no libera dependencias; tras la respuesta tardía el DAG permanece bloqueado y el manifiesto INCOMPLETE.
+- Sin mocks de auditoría, grants, scripts ejecutados por agentes, cambios de producción ni Python.
+- No representa el E2E operador real: no ejecuta Quarkus HTTP intake, Ollama ni auditoría semántica productiva. No declarar F4 cerrado.
+
+### Validación
+```bash
+./gradlew :apps:control-plane:test --tests '*F43G3TimeoutRecoveryTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### F4.3-G4 — Próximo incremento obligatorio
+1. Harness Quarkus con entrada HTTP y aprobación explícita del operador, usando consumidores de producción y rutas SQLite consistentes.
+2. Ejecutar modelo y auditoría semántica reales opt-in, guardar IDs, decisiones y tiempos observados, nunca inferidos.
+3. Pruebas de lease vencido, saturación 429, replay, concurrencia y material alterado; confirmar no duplicación de efectos.
+4. Verificar bytes SHA-256 actuales para grants materiales, aislamiento de workspace y ausencia de secretos en logs.
+5. Adjuntar evidencia real de ejecución al PR; F4 se cierra únicamente al superar el E2E operativo completo.
+
+### Aprendizaje
+El timeout del request Vert.x no cancela necesariamente la inferencia externa. El fencing del lease y el estado durable deben impedir que una respuesta tardía desbloquee el DAG. DEAD requiere intervención o reconciliación explícita; no se debe marcar como COMPLETED.
