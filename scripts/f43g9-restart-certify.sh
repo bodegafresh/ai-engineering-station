@@ -1,92 +1,66 @@
 #!/usr/bin/env bash
-# F4.3-G9: read-only restart certification. No workflow mutation or automatic retry.
+# F4.3-G10-F: authenticated, read-only restart snapshot comparison.
 set -Eeuo pipefail
 umask 077
-for command_name in curl jq sha256sum mktemp; do
-  command -v "$command_name" >/dev/null || { echo "Missing $command_name" >&2; exit 2; }
-done
-: "${AIES_WORKSPACE_CHANGES_TOKEN:?Centralized operator token required}"
-: "${AIES_WORKFLOW_ID:?Existing imported workflow ID required}"
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/f43g10e-http.sh"
+: "${AIES_WORKFLOW_ID:?Existing imported workflow required}"
 : "${AIES_CERT_DIR:?Persistent certification directory required}"
-[[ "$AIES_WORKFLOW_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$ ]] || { echo 'Invalid workflow ID' >&2; exit 2; }
-BASE="${AIES_BASE_URL:-http://127.0.0.1:8080}"
-[[ "$BASE" =~ ^http://(127\.0\.0\.1|localhost):[0-9]{1,5}$ ]] || { echo 'Only explicit loopback HTTP port allowed' >&2; exit 2; }
+aies_id "$AIES_WORKFLOW_ID" || { echo 'Invalid workflow ID' >&2; exit 2; }
 MODE="${1:-}"
 [[ "$MODE" == before || "$MODE" == after ]] || { echo 'Usage: script before|after' >&2; exit 2; }
 [[ ! -L "$AIES_CERT_DIR" ]] || { echo 'Refusing symlink certification directory' >&2; exit 2; }
-mkdir -p -- "$AIES_CERT_DIR"; chmod 700 -- "$AIES_CERT_DIR"
+mkdir -p -- "$AIES_CERT_DIR"
+chmod 700 -- "$AIES_CERT_DIR"
 DIR="$(cd -- "$AIES_CERT_DIR" && pwd -P)"
-[[ -d "$DIR" && ! -L "$DIR" ]] || exit 2
 PRE="$DIR/$AIES_WORKFLOW_ID.before.json"
 POST="$DIR/$AIES_WORKFLOW_ID.after.json"
-TEMP="$(mktemp -d)"; trap 'rm -rf -- "$TEMP"' EXIT
-api() {
-  local path="$1" file="$2" token="$3" code
-  code="$(curl --silent --show-error --noproxy '*' --connect-timeout 5 --max-time 45 \
-    --request GET --header "X-AIES-Workspace-Token: $token" \
-    --output "$file" --write-out '%{http_code}' "$BASE$path")" || {
-      echo 'Transport failure; no state was changed' >&2; exit 4;
-    }
-  printf '%s' "$code"
-}
+[[ "$MODE" != before || ! -e "$PRE" ]] || { echo 'Baseline already exists; use new directory' >&2; exit 3; }
+[[ "$MODE" != after || -f "$PRE" ]] || { echo 'Missing baseline' >&2; exit 3; }
+[[ "$MODE" != after || ! -e "$POST" ]] || { echo 'After snapshot already exists' >&2; exit 3; }
+TMP="$(mktemp -d)"; trap 'rm -rf -- "$TMP"' EXIT
 ROOT="/api/v1/execution/workflows/$AIES_WORKFLOW_ID"
-if [[ "$MODE" == after && ! -f "$PRE" ]]; then
-  echo 'Missing before snapshot; no restart comparison possible' >&2; exit 3
-fi
-if [[ "$MODE" == before && -e "$PRE" ]]; then
-  echo 'Refusing to overwrite baseline; use a new certification directory' >&2; exit 3
-fi
-# Negative access check: a wrong token must not disclose workflow state.
-BAD_TOKEN="invalid-token-for-negative-test"
-status="$(api "$ROOT/acceptance" "$TEMP/negative.json" "$BAD_TOKEN")"
-[[ "$status" == 404 || "$status" == 401 || "$status" == 403 ]] || {
-  echo "SECURITY FAILURE: wrong token returned HTTP $status" >&2; exit 5;
+# Negative authorization: use shared curl configuration, never token argv.
+# Distinct invalid token must not return successful workflow content.
+SAVED_TOKEN="$AIES_WORKSPACE_CHANGES_TOKEN"
+AIES_WORKSPACE_CHANGES_TOKEN='invalid-token-for-negative-test'
+aies_http GET "$ROOT/acceptance" "$TMP/negative.json"
+NEGATIVE_STATUS="$AIES_HTTP_STATUS"
+AIES_WORKSPACE_CHANGES_TOKEN="$SAVED_TOKEN"
+unset SAVED_TOKEN
+[[ "$NEGATIVE_STATUS" == 401 || "$NEGATIVE_STATUS" == 403 || "$NEGATIVE_STATUS" == 404 ]] || { echo "SECURITY FAILURE: wrong token HTTP $NEGATIVE_STATUS" >&2; exit 5; }
+fetch() {
+  local suffix="$1" output="$2"
+  aies_http GET "$ROOT/$suffix" "$output"
+  [[ "$AIES_HTTP_STATUS" == 200 ]] || { echo "GET $suffix HTTP $AIES_HTTP_STATUS" >&2; exit 4; }
 }
-# Capture only bounded, sanitized state; do not persist tokens or full model output.
-status="$(api "$ROOT/acceptance" "$TEMP/acceptance.json" "$AIES_WORKSPACE_CHANGES_TOKEN")"
-[[ "$status" == 200 ]] || { echo "Acceptance HTTP $status" >&2; exit 4; }
-jq -e --arg id "$AIES_WORKFLOW_ID" '
-  .workflowId==$id and
-  (.acceptanceStatus=="VERIFIED" or .acceptanceStatus=="INCOMPLETE") and
-  (.tasks|type=="array") and
-  all(.tasks[]; (.taskId|type=="string") and (.status|type=="string"))
-' "$TEMP/acceptance.json" >/dev/null || { echo 'Invalid acceptance contract' >&2; exit 4; }
-status="$(api "$ROOT/recovery" "$TEMP/recovery.json" "$AIES_WORKSPACE_CHANGES_TOKEN")"
-[[ "$status" == 200 ]] || { echo "Recovery HTTP $status; enable recovery endpoint" >&2; exit 4; }
-jq -e --arg id "$AIES_WORKFLOW_ID" '.workflowId==$id and (.tasks|type=="array")' "$TEMP/recovery.json" >/dev/null || exit 4
-material="NOT_CHECKED"
+fetch acceptance "$TMP/acceptance.json"
+jq -e --arg id "$AIES_WORKFLOW_ID" '.workflowId==$id and (.acceptanceStatus=="VERIFIED" or .acceptanceStatus=="INCOMPLETE") and (.tasks|type=="array") and (.tasks|length>0) and all(.tasks[]; (.taskId|type=="string") and (.status|type=="string"))' "$TMP/acceptance.json" >/dev/null || { echo 'Invalid acceptance contract' >&2; exit 4; }
+fetch recovery "$TMP/recovery.json"
+jq -e --arg id "$AIES_WORKFLOW_ID" '.workflowId==$id and (.tasks|type=="array")' "$TMP/recovery.json" >/dev/null || { echo 'Invalid recovery contract' >&2; exit 4; }
+MATERIAL='NOT_CHECKED'
 if [[ "${AIES_CERT_REQUIRE_MATERIAL:-false}" == true ]]; then
-  status="$(api "$ROOT/material-acceptance" "$TEMP/material.json" "$AIES_WORKSPACE_CHANGES_TOKEN")"
-  [[ "$status" == 200 ]] || { echo "Material HTTP $status (possible tamper or feature disabled)" >&2; exit 5; }
-  material="$(jq -r '.status' "$TEMP/material.json")"
-  [[ "$material" == MATERIAL_VERIFIED ]] || { echo "Material not verified: $material" >&2; exit 5; }
+  fetch material-acceptance "$TMP/material.json"
+  MATERIAL="$(jq -r '.status // "UNKNOWN"' "$TMP/material.json")"
+  [[ "$MATERIAL" == MATERIAL_VERIFIED ]] || { echo "Material not verified: $MATERIAL" >&2; exit 5; }
 fi
-jq -n --arg id "$AIES_WORKFLOW_ID" --arg material "$material" \
-  --slurpfile a "$TEMP/acceptance.json" --slurpfile r "$TEMP/recovery.json" '
-  {schemaVersion:"1.0", workflowId:$id, acceptanceStatus:$a[0].acceptanceStatus,
-   materialStatus:$material,
+jq -n --arg id "$AIES_WORKFLOW_ID" --arg material "$MATERIAL" --slurpfile a "$TMP/acceptance.json" --slurpfile r "$TMP/recovery.json" '
+  {schemaVersion:"1.0",workflowId:$id,acceptanceStatus:$a[0].acceptanceStatus,materialStatus:$material,
    tasks:([$a[0].tasks[]|{taskId,status,attempts,artifactId,artifactSha256,auditId,auditSha256,auditDecision}]|sort_by(.taskId)),
-   recovery:([$r[0].tasks[]|{taskId,status,attempts,leaseExpired,action,
-     attemptHistory:([.attemptHistory[]?|{attemptId,phase,diagnosis,modelInvocationReserved}]|sort_by(.attemptId))}]|sort_by(.taskId))}' > "$TEMP/snapshot.json"
-[[ "$(jq -r '.tasks|length' "$TEMP/snapshot.json")" -gt 0 ]] || { echo 'No tasks' >&2; exit 4; }
+   recovery:([$r[0].tasks[]|{taskId,status,attempts,leaseExpired,action,attemptHistory:([.attemptHistory[]?|{attemptId,phase,diagnosis,modelInvocationReserved}]|sort_by(.attemptId))}]|sort_by(.taskId))}' > "$TMP/snapshot.json"
 if [[ "$MODE" == before ]]; then
-  mv -n -- "$TEMP/snapshot.json" "$PRE"
-  [[ -f "$PRE" ]] || exit 4
+  # noclobber: no silent baseline replacement
+  (set -C; cat "$TMP/snapshot.json" > "$PRE") || { echo 'Baseline collision' >&2; exit 3; }
   echo "Baseline captured: $PRE"
-  echo 'Restart Quarkus with the SAME persistent SQLite data root, then run after.'
+  echo 'Restart Quarkus using the SAME durable SQLite data root, then run after.'
 else
-  # Compare all persisted IDs, hashes and recovery phases; differences require operator inspection.
-  jq -S . "$PRE" > "$TEMP/pre.normalized"
-  jq -S . "$TEMP/snapshot.json" > "$TEMP/post.normalized"
-  if ! cmp -s "$TEMP/pre.normalized" "$TEMP/post.normalized"; then
-    echo 'DRIFT: persistent state changed across restart; refusing certification' >&2
-    exit 6
-  fi
-  [[ ! -e "$POST" ]] || { echo 'Refusing overwrite of after snapshot' >&2; exit 3; }
-  mv -n -- "$TEMP/snapshot.json" "$POST"
+  jq -S . "$PRE" > "$TMP/before.sorted"
+  jq -S . "$TMP/snapshot.json" > "$TMP/after.sorted"
+  cmp -s "$TMP/before.sorted" "$TMP/after.sorted" || { echo 'DRIFT: state changed; operator reconciliation required' >&2; exit 6; }
+  (set -C; cat "$TMP/snapshot.json" > "$POST") || { echo 'After collision' >&2; exit 3; }
   echo "RESTART_SNAPSHOT_MATCH workflow=$AIES_WORKFLOW_ID"
   echo "baseline_sha256=$(sha256sum "$PRE" | cut -d' ' -f1)"
   echo "after_sha256=$(sha256sum "$POST" | cut -d' ' -f1)"
 fi
-echo "acceptance=$(jq -r '.acceptanceStatus' "$([[ "$MODE" == before ]] && printf %s "$PRE" || printf %s "$POST")") material=$material"
-echo 'Scope: read-only state comparison; does not prove a crash occurred, model timing, or 429 behavior.'
+echo "acceptance=$(jq -r '.acceptanceStatus' "$TMP/snapshot.json") material=$MATERIAL"
+echo 'Scope: read-only comparison. Does not independently prove a crash, model call, or byte integrity without material check.'

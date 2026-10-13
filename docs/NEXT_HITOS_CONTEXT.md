@@ -477,3 +477,40 @@ bash -n scripts/f43g5-operator-e2e.sh scripts/f43g6-intake-certification.sh scri
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
+
+## F4.3-G10-F — Safe restart transport and production evidence collection (operator certification pending)
+
+### Delivered
+- G9 restart snapshot now uses the centralized G10-E HTTP helper for every call, including the negative-token check. No operator secret in curl argv; non-JSON 404 is valid only for negative authorization. Loopback-only, read-only, fail-closed.
+- `scripts/f43g10f-certification-report.sh` reads real production acceptance/recovery and optionally material-acceptance. Emits a private, sanitized, non-overwriting JSON observation and its SHA-256. No model output, secrets, or artificial decisions. It does not call workers or approve audits.
+- Existing G9 before/after snapshots still require an actual manual Quarkus restart against the same SQLite data root. A matching snapshot alone is not proof a restart occurred.
+
+### Runbook
+```bash
+# Start real Quarkus/Ollama separately with opt-in flags; source .env securely.
+export AIES_WORKFLOW_ID='an-existing-approved-imported-workflow'
+export AIES_CERT_DIR="$PWD/.local-certifications/g10f-01"
+# Set AIES_WORKSPACE_CHANGES_TOKEN in the shell, never in committed files.
+bash scripts/f43g10f-certification-report.sh
+bash scripts/f43g9-restart-certify.sh before
+# Manually stop and restart Quarkus, preserving data root; do not run worker meanwhile.
+bash scripts/f43g9-restart-certify.sh after
+```
+
+### Closure criteria still OPEN
+1. New immutable intake with exact source manifest and approved planning audit; explicit operator review and import; real specialist Ollama invocation and real quality audit; canonical VERIFIED. Record actual model identity, timing, request outcomes and persisted IDs without fabricating fields.
+2. Negative cases: invalid token, rejected audit, stale lease and late response, replay, concurrency/429, tampered artifact and current material bytes. No DAG unlock on failure. Verify durable restart with actual process stop/start and unchanged data root.
+3. Repeatable automated tests in CI and operator evidence with UTC timestamps, immutable hashes, redacted logs and human sign-off. Do not confuse a sanitized observation with comprehensive E2E proof.
+4. G10-G next: add deterministic negative runtime/transport fixtures, opt-in Quarkus/Ollama certification harness and measured model/runtime observability. F4 remains **OPEN**; F5 is not started.
+
+### Validation
+```bash
+bash -n scripts/f43g9-restart-certify.sh scripts/f43g10f-certification-report.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Caveats
+- Report is a read-only observation; a VERIFIED canonical manifest does not prove semantic correctness or real-world task completion.
+- G9 and report are not atomic cross-endpoint snapshots; concurrent mutations can cause drift. Run only in an operator-controlled quiet window.
+- No Gradle, Quarkus, Ollama, 429 or crash/restart tests were executed by the package producer.
