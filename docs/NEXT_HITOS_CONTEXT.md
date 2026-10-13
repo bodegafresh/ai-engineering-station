@@ -55,3 +55,13 @@ git status --short
 ```
 
 **Estado de validación:** código preparado a partir de las fuentes revisadas en GitHub; Gradle aún debe ejecutarse en el checkout local. Si falla, no abrir PR hasta corregirlo.
+
+## F3.5.3 — Verified Completion Boundary (2026-10-13)
+
+- `approveEvidence` (legacy) falla cerrado; `approveVerifiedEvidence` valida evidencia canónica y auditoría persistida antes de CAS a COMPLETED.
+- `ExecutionQualityGate` conserva Event Bus y delega transición al store verificador.
+- Tests de rechazo, aprobación exacta, replay y desbloqueo de DAG.
+- F4.1: E2E reproducible con modelo simulado, falla/reinicio y reporte final.
+- F4.2: Ollama local real con permisos explícitos y resultados materiales.
+- F4.3: aceptación y observabilidad con evidencia de ejecución.
+- Riesgo pendiente: SQLite y archivo físico no comparten transacción; revisar TOCTOU para amenazas locales.
