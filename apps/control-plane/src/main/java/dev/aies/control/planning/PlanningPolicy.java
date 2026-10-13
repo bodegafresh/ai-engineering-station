@@ -9,6 +9,11 @@ public final class PlanningPolicy {
     public static Review review(PlanningContracts.Intake raw) {
         var in=PlanningContracts.validate(raw);
         var findings=new ArrayList<String>();
+        var methodology=dev.aies.control.methodology.MethodologyRouter.select(in);
+        if(methodology.needsClarification()) findings.add("Unknown methodology: clarify domain or capabilities");
+        var requirements=RequirementsAssessment.assess(in);
+        for(var finding:requirements.findings())
+            findings.add(finding.code()+" ["+finding.requirementId()+"] "+finding.detail());
         if(!in.openQuestions().isEmpty())findings.add("Unresolved questions: "+in.openQuestions().size());
         var deps=new HashMap<String,List<String>>();
         for(var r:in.requirements()) {
@@ -20,7 +25,8 @@ public final class PlanningPolicy {
         for(var id:deps.keySet())if(cyclic(id,deps,states)) {
             findings.add("Cyclic dependencies");break;
         }
-        return new Review(findings.isEmpty(),List.copyOf(findings),1,1);
+        return new Review(findings.isEmpty(),List.copyOf(findings),
+            requirements.traceability(),requirements.verifiability());
     }
     private static boolean cyclic(String id,Map<String,List<String>> graph,Map<String,Integer> states) {
         int state=states.getOrDefault(id,0);
