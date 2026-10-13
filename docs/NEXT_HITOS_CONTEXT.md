@@ -283,3 +283,12 @@ git diff --check
 
 ### Aprendizaje
 El timeout del request Vert.x no cancela necesariamente la inferencia externa. El fencing del lease y el estado durable deben impedir que una respuesta tardía desbloquee el DAG. DEAD requiere intervención o reconciliación explícita; no se debe marcar como COMPLETED.
+
+## F4.3-G4 — Operator acceptance smoke (read-only)
+- `scripts/f43g4-operator-acceptance.sh` uses production Quarkus HTTP operator endpoints (`tasks` and `acceptance`), checks invalid-token rejection, reads real SQLite-backed state via existing resources, and validates exact task ID/status consistency. It does not modify workflows, fabricate audits or trigger models.
+- Requires an **existing** approved/imported workflow and explicit operator token. Only loopback HTTP accepted; temporary responses have 0700 directory permissions and are removed on exit; no token printed.
+- Execution: `AIES_WORKFLOW_ID=... AIES_WORKSPACE_TOKEN=... bash scripts/f43g4-operator-acceptance.sh`. Optional `AIES_BASE_URL=http://127.0.0.1:8080`.
+- Limitations: two REST calls are not an atomic snapshot. `VERIFIED` is canonical audit linkage, not real-world correctness. The smoke does not prove intake, plan approval, real Ollama, worker, recovery or material SHA current bytes.
+- F4 **remains open** until the actual end-to-end operator-approved flow (intake → plan → approval → real worker/consumer → Ollama → material if authorized → real audit → acceptance) has been run, recorded and checked against negative cases. Do not replace this requirement with a mocked audit.
+- F4.3-G5 next: orchestrated opt-in Quarkus E2E with production consumers, explicit human authorization, actual model identity/latency evidence, negative security/recovery cases and repeatable metrics; close F4 only on observed results. Then F5 tools and F6 hardening.
+- Learning: a read-only HTTP acceptance check is valuable operational evidence but must never be labeled a complete E2E; distinguish canonical record hashes from live filesystem SHA-256.
