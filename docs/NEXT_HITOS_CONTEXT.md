@@ -104,3 +104,35 @@ git diff --check
 
 ### Aprendizaje F4.3-B
 No confundir manifiesto canónico con prueba material o resultado externo. Separar pruebas deterministas, smoke HTTP y E2E con modelo real. Instalador Bash idempotente por rechazo, sin sobreescribir archivos existentes.
+
+## F4.3-C — Material acceptance (incremento implementado; E2E real pendiente)
+### Implementado
+- `ExecutionMaterialAcceptance`: lectura estricta e independiente del manifiesto canónico, usando los verificadores de evidencia existentes.
+- `MATERIAL_VERIFIED` exige aceptación canónica, al menos una referencia material por tarea y coincidencia actual del contenido y SHA-256 de los archivos.
+- Si falta una referencia material, se informa `INCOMPLETE`/`NOT_APPLICABLE`, sin reinterpretar el `VERIFIED` canónico como prueba material.
+- Si el archivo cambió, la inspección falla cerrada (`SecurityException`); no muta el DAG ni invoca modelos.
+- Tests para ausencia de evidencia material y detección de alteración tras aprobación.
+- Preflight Bash de Ollama local sin imprimir tokens. No se introduce Python ni se cambia el contrato del Event Bus.
+
+### Validación local requerida
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionMaterialAcceptanceTest' --tests '*ExecutionAcceptanceManifestTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+bash scripts/f43c-preflight.sh
+git diff --check
+```
+
+### Pendiente para cerrar F4.3-C
+1. Conectar inspección material a un endpoint operador `@Blocking`, autorizado y con workspace root configurado explícitamente; NO exponer el filesystem a rutas del usuario.
+2. E2E real con Ollama: intake, plan aprobado, claim, modelo por Event Bus, evidencia, auditoría, aceptación; conservar IDs, latencias y versión efectiva del modelo.
+3. Inyección de fallas: respuesta tardía, lease expirado, replay, reinicio, archivo alterado y rechazo de auditoría.
+4. Evitar reintentos automáticos de invocaciones ambiguas; reconciliación durable de efectos externos.
+5. Instrumentar event loop y workers; prohibir JDBC, archivos y HTTP bloqueantes en event loop.
+6. Guardar evidencia real del smoke en el PR. No declarar E2E exitoso sin ejecución observada.
+
+### Próximos hitos
+- **F5**: herramientas de ingeniería autorizadas y aisladas; allowlist, recursos acotados, auditoría de efectos y pruebas reproducibles.
+- **F6**: observabilidad, backpressure, recuperación multiproceso, threat model, runbooks y compatibilidad Gradle 9.
+
+### Aprendizaje F4.3-C
+La aceptación canónica no garantiza que los bytes actuales del workspace coincidan. Mantener niveles de verificación explícitos, sin cambiar semánticas existentes ni inventar resultados de pruebas.
