@@ -20,12 +20,15 @@ class ExecutionHandoffStoreTest {
             assertEquals("a",first.taskId());
             token=first.leaseToken();
             assertTrue(store.claim("wf-execution",3,60).isEmpty());
-            assertFalse(store.complete("wf-execution","a","wrong","artifact://test/a"));
-            assertThrows(IllegalArgumentException.class,()->store.complete("wf-execution","a",token,""));
+            assertThrows(UnsupportedOperationException.class, () -> store.complete("wf-execution","a","wrong","artifact://test/a"));
+            assertThrows(UnsupportedOperationException.class,()->store.complete("wf-execution","a",token,""));
         }
         try(var store=new ExecutionHandoffStore(file,new ObjectMapper())) {
-            assertTrue(store.complete("wf-execution","a",token,"artifact://test/a"));
-            assertFalse(store.complete("wf-execution","a",token,"artifact://test/a"));
+            assertTrue(store.stageEvidence("wf-execution","a",token,"artifact-a"));
+            assertTrue(store.claim("wf-execution",3,60).isEmpty());
+            assertTrue(store.approveEvidence("wf-execution","a","artifact://communication/artifact-a","audit-a"));
+            assertFalse(store.approveEvidence("wf-execution","a","artifact://communication/artifact-a","audit-a"));
+            assertEquals("audit-a",store.approvedAuditId("wf-execution","a").orElseThrow());
             assertEquals("b",store.claim("wf-execution",3,60).orElseThrow().taskId());
         }
     }

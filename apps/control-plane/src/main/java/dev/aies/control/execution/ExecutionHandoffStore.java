@@ -25,6 +25,12 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS execution_workflows(workflow_id TEXT PRIMARY KEY, plan_json TEXT NOT NULL, created_at TEXT NOT NULL)");
             s.execute("CREATE TABLE IF NOT EXISTS execution_tasks(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,specialist_id TEXT NOT NULL,status TEXT NOT NULL,lease_token TEXT,lease_until TEXT,attempts INTEGER NOT NULL DEFAULT 0,evidence_ref TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id),FOREIGN KEY(workflow_id) REFERENCES execution_workflows(workflow_id))");
             s.execute("CREATE INDEX IF NOT EXISTS execution_tasks_status_idx ON execution_tasks(workflow_id,status)");
+            // Additive migration for existing databases. Audit identity survives restarts.
+            boolean hasAuditColumn = false;
+            try (var columns = db.createStatement().executeQuery("PRAGMA table_info(execution_tasks)")) {
+                while (columns.next()) if ("audit_record_id".equals(columns.getString("name"))) hasAuditColumn = true;
+            }
+            if (!hasAuditColumn) s.execute("ALTER TABLE execution_tasks ADD COLUMN audit_record_id TEXT");
         }
     }
     /** Idempotent import: same workflow + same plan is a no-op, changed plan is rejected. */
@@ -98,15 +104,10 @@ public final class ExecutionHandoffStore implements AutoCloseable {
         } catch(Exception e) {db.rollback();throw e;}
         finally {db.setAutoCommit(true);}
     }
-    /** Completion requires an evidence reference; never claims that a test passed by itself. */
-    public synchronized boolean complete(String workflowId,String taskId,String token,String evidenceRef) throws Exception {
-        if (token == null || token.isBlank() || evidenceRef == null ||
-            !(evidenceRef.startsWith("artifact://") || evidenceRef.startsWith("https://")))
-            throw new IllegalArgumentException("Evidence reference required");
-        try (var p = db.prepareStatement("UPDATE execution_tasks SET status='COMPLETED',evidence_ref=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>?")) {
-            p.setString(1,evidenceRef);p.setString(2,Instant.now().toString());p.setString(3,workflowId);p.setString(4,taskId);p.setString(5,token);p.setString(6,Instant.now().toString());
-            return p.executeUpdate() == 1;
-        }
+    /** Legacy direct completion is disabled: all work must pass verified evidence and audit. */
+    @Deprecated(forRemoval = true)
+    public synchronized boolean complete(String workflowId,String taskId,String token,String evidenceRef) {
+        throw new UnsupportedOperationException("Direct completion bypasses evidence audit; use approveEvidence");
     }
     /** Idempotent lease-token guarded failure. Retryable work is requeued; terminal work is dead-lettered. */
     public synchronized boolean fail(String workflowId,String taskId,String token,boolean retryable,int maxAttempts) throws Exception {
@@ -148,10 +149,19 @@ public final class ExecutionHandoffStore implements AutoCloseable {
         dev.aies.control.communication.CommunicationContracts.id(auditRecordId);
         if (evidenceRef == null || !evidenceRef.startsWith("artifact://communication/"))
             throw new IllegalArgumentException("Invalid evidence reference");
-        try (var p = db.prepareStatement("UPDATE execution_tasks SET status='COMPLETED',updated_at=? WHERE workflow_id=? AND task_id=? AND status='EVIDENCE_PENDING' AND evidence_ref=?")) {
-            p.setString(1,java.time.Instant.now().toString());
-            p.setString(2,workflowId);p.setString(3,taskId);p.setString(4,evidenceRef);
+        try (var p = db.prepareStatement("UPDATE execution_tasks SET status='COMPLETED',audit_record_id=?,updated_at=? WHERE workflow_id=? AND task_id=? AND status='EVIDENCE_PENDING' AND evidence_ref=?")) {
+            p.setString(1,auditRecordId);p.setString(2,java.time.Instant.now().toString());
+            p.setString(3,workflowId);p.setString(4,taskId);p.setString(5,evidenceRef);
             return p.executeUpdate()==1;
+        }
+    }
+    /** Durable approval provenance for final-delivery manifest. */
+    public synchronized Optional<String> approvedAuditId(String workflowId, String taskId) throws Exception {
+        dev.aies.control.communication.CommunicationContracts.id(workflowId);
+        dev.aies.control.communication.CommunicationContracts.id(taskId);
+        try (var p = db.prepareStatement("SELECT audit_record_id FROM execution_tasks WHERE workflow_id=? AND task_id=? AND status='COMPLETED'")) {
+            p.setString(1,workflowId);p.setString(2,taskId);
+            try (var rs=p.executeQuery()) { return rs.next() ? Optional.ofNullable(rs.getString(1)) : Optional.empty(); }
         }
     }
     @Override public void close() throws Exception {db.close();}
