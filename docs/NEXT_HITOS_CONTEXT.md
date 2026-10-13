@@ -544,3 +544,28 @@ git diff --check
 
 ### Honesty of validation
 The archive author can validate shell syntax and mock fixtures locally, but has not run this package against the user's Quarkus/Ollama instance or certified a live F4 workflow. Existing G10-F report and G9 snapshots are read-only observations, not comprehensive end-to-end proof.
+
+## F4.3-G10-H — SQLite lease fencing, concurrent claim and restart negatives (local validation pending)
+
+### Delivered in this increment
+- `F43G10HExecutionSafetyTest` exercises the actual `ExecutionHandoffStore` against isolated SQLite files, with a two-task dependency DAG. No mocked database, LLM approvals, external service or production data root.
+- Stale/wrong lease tokens cannot stage evidence or fail another attempt. After a bounded retry, a new token is issued and the previous token cannot alter the state. Staged evidence does not unlock a dependent task without a verified audit.
+- Eight independent connections race to claim the same workflow; only one active claim may exist. A reopened store checks durable lease and attempt count.
+- Terminal retry exhaustion persists across SQLite reopening; the dependent task stays PENDING and canonical acceptance remains INCOMPLETE.
+- Fail-closed installer refuses overwriting an existing test and appends only to this canonical roadmap.
+
+### Validation required on user's machine
+```bash
+./gradlew :apps:control-plane:test --tests '*F43G10HExecutionSafetyTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Explicit limits and next milestone G10-I
+- These tests do not force real wall-clock lease expiration, kill a JVM mid-transaction, test multiprocess SQLite locking, prove 429 under real Ollama load, verify workspace bytes or measure event-loop latency. An active lease replaced after a controlled failure is not proof of expiration behavior.
+- G10-I must cover deterministic clock-controlled expiry or bounded real expiry, late model reply, genuine subprocess crash/restart, material tamper, audit replay, live Ollama identity/timing and controlled saturation. Preserve immutable evidence and operator review; no automatic retry of ambiguous mutations.
+- F4 remains **OPEN** until observed, reproducible live acceptance and negative certification with operator sign-off. Do not start F5 solely because unit tests pass.
+
+### Lessons
+- A successful HTTP fixture cannot prove SQLite fencing. Exercise the store through multiple independently opened connections and assert durable state after reopening.
+- Keep negative tests isolated from real operator data and distinguish simulated restart (connection reopen) from an actual process restart.
