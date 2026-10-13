@@ -80,3 +80,27 @@ git diff --check
 4. Los tests E2E deben verificar el estado durable, no solo el JSON de respuesta.
 5. Los instaladores no deben usar patches corruptos, rutas duplicadas ni sobrescribir archivos existentes sin revisión.
 6. Conservar un solo roadmap canónico; el historial Git preserva los incrementos anteriores.
+
+## F4.3-B — Incremento de frontera operativa (pendiente de validación local)
+- Nuevo endpoint GET `/api/v1/execution/workflows/{id}/acceptance`, `@Blocking`, deshabilitado por defecto mediante `AIES_EXECUTION_ACCEPTANCE_ENABLED=false`; autorización por `X-AIES-Workspace-Token` usando `WorkspaceOperatorAuthorizer` y feature flag de handoff.
+- Respuesta de solo lectura desde `ExecutionAcceptanceManifest`; workflow desconocido responde 404. No se invoca modelo, no se conceden capacidades, no se modifica DAG.
+- Test Quarkus de rechazo anónimo y token inválido; Bash `scripts/f43b-smoke.sh` de operador que inspecciona un workflow existente y valida esquema si `jq` está disponible.
+- **NO CERRADO**: este incremento no constituye E2E real con Ollama ni comprueba material actual; el smoke es read-only. No marcar F4.3 como aceptado sin pruebas adicionales.
+
+### Validación requerida
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionAcceptanceResourceTest' --tests '*ExecutionAcceptanceManifestTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Siguiente incremento obligatorio: F4.3-C — E2E real, evidencias y cierre
+1. Preflight de modelo Ollama, Quarkus, flags y token sin imprimir secretos; workspace temporal aislado.
+2. Orquestar intake → plan → aprobación → claim → especialista real por Vert.x Event Bus → evidencia → auditoría → aceptación, sin atajos ni autorizaciones automáticas.
+3. Medir correlación, latencia, modelo real y material SHA-256; verificar bytes actuales y reabrir SQLite.
+4. Negativos: grant ausente, SHA cambiado, auditoría rechazada, lease vencido, replay, timeout y respuesta tardía. Ninguno desbloquea DAG.
+5. Probar que JDBC, I/O y HTTP del modelo no bloquean event loop, con límites de concurrencia y timeouts.
+6. Documentar resultados realmente ejecutados y artefactos adjuntos al PR. Sin pruebas reales, declarar estado PENDIENTE.
+
+### Aprendizaje F4.3-B
+No confundir manifiesto canónico con prueba material o resultado externo. Separar pruebas deterministas, smoke HTTP y E2E con modelo real. Instalador Bash idempotente por rechazo, sin sobreescribir archivos existentes.
