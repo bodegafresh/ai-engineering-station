@@ -36,13 +36,30 @@ git diff --check
 - SQLite y filesystem no son una única transacción. Falta crash injection en todas las fronteras.
 - Los tests de este hito no demuestran concurrencia multiproceso ni resistencia a saturación del event loop.
 
-## F4.3 — E2E de aceptación operativa
-1. CLI Bash reproducible con preflight de Ollama, Quarkus, workspace descartable y tokens válidos.
-2. Prueba de punta a punta intake -> plan -> aprobación -> ejecución -> material -> hash -> auditoría -> manifiesto final.
-3. Casos negativos: grant ausente, SHA alterado, lease vencido, respuesta tardía, auditoría bloqueada, replay y reinicio.
-4. Manifiesto durable read-only con workflow/task/attempt/artifact/audit, SHA-256, versión de modelo, tiempos y limitaciones.
-5. Medir llamadas reales, duración, latencias, errores y recursos; nunca inventar resultados.
-6. Cierre: suite completa y smoke real ejecutado por el operador, evidencia adjunta al PR.
+## F4.3 — E2E de aceptación operativa (en progreso)
+### Entregado en F4.3-A: manifiesto de aceptación canónico
+- `ExecutionAcceptanceManifest` reconstruye una vista de solo lectura desde `execution-handoff.sqlite` y `communication.sqlite`.
+- Cada tarea expone estado, intentos, ID y SHA-256 del artefacto canónico, auditoría aprobada, SHA-256 de auditoría y marcas temporales disponibles.
+- `VERIFIED` exige todas las tareas en `COMPLETED`, con evidencia canónica y auditoría aprobada exacta; cualquier otra situación queda `INCOMPLETE` o falla cerrada.
+- Test de persistencia/reapertura y transición antes/después de aprobación.
+- La inspección NO modifica estados, NO ejecuta modelos y NO equivale a una transacción atómica entre ambas bases.
+- El manifiesto todavía NO verifica el hash actual de archivos del workspace ni registra versión del modelo; esas ausencias se declaran como limitaciones, no se inventan.
+
+### F4.3-B: pendiente para cierre de aceptación real
+1. Exponer el manifiesto mediante un endpoint de operador autenticado, con `@Blocking`, paginación/límites y sin revelar secretos.
+2. CLI Bash reproducible con preflight Ollama/Quarkus, tokens válidos, workspace descartable y chequeos de disponibilidad.
+3. Ejecutar camino real intake → plan → aprobación → especialista → archivo → SHA-256 material → auditoría → manifiesto; registrar IDs, latencias, versión real del modelo y resultados.
+4. Negativos obligatorios: autorización ausente, SHA alterado, lease vencido, respuesta tardía, auditoría bloqueada, replay y reinicio.
+5. Añadir consistencia de lectura entre bases, o documentar explícitamente la naturaleza eventual del snapshot; nunca prometer atomicidad inexistente.
+6. CI: suite completa, smoke de operador reproducible y evidencia real adjunta al PR. No declarar F4.3 cerrado sin ejecutar el smoke.
+
+### Comandos de validación F4.3-A
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionAcceptanceManifestTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*F42ExecutionRecoveryTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
 
 ## F5 — Herramientas controladas
 - Parches de código y verificación aislada con permisos explícitos, límites de CPU/memoria/tiempo, allowlist de rutas y comandos, Docker reproducible.
