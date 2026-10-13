@@ -52,14 +52,37 @@ class WorkspaceDocumentationServiceTest {
             var executor = new OllamaSpecialistExecutor(HttpClient.newHttpClient(),new ObjectMapper(),
                 "http://127.0.0.1:"+server.getAddress().getPort(),"qwen3:4b",5);
             var service = new WorkspaceDocumentationService(root,root.resolve("journal"),executor,new ObjectMapper());
-            var result = service.generate(request("A.java"));
+            // F3.4 requires a durable operator grant and a live task lease.
+            // The legacy approved=true flag is deliberately insufficient.
+            String sha = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(
+                    Files.readAllBytes(root.resolve("A.java"))));
+            String attempt;
+            try (var handoff = new ExecutionHandoffStore(
+                    root.resolve("journal/execution-handoff.sqlite"), new ObjectMapper())) {
+                handoff.importPlan(ExecutionGraphTest.plan(ExecutionGraphTest.task("task-1")));
+                // The test's request uses wf-1; the imported fixture uses wf-execution.
+                // Use the imported workflow identity consistently for grant and lease.
+                handoff.authorizeCapability(new ExecutionCapabilityAuthorization(
+                    "wf-execution", "task-1", "workspace-documentation", "A.java", sha));
+                attempt = handoff.claim("wf-execution", 3, 60).orElseThrow().leaseToken();
+            }
+            var authorizedRequest = request("A.java")
+                .put("workflowId", "wf-execution")
+                .put("attemptId", attempt)
+                .put("approvedSourceSha256", sha);
+            var result = service.generate(authorizedRequest);
             assertEquals("EVIDENCE_PENDING",result.getString("status"));
             assertEquals("FILE_HASH_VERIFIED_NOT_AUDITED",result.getString("verification"));
             assertTrue(Files.readString(root.resolve(result.getString("documentPath"))).contains("Documents value()"));
             assertNotNull(result.getString("artifactRecordId"));
             assertEquals(64,result.getString("sourceSha256").length());
             assertEquals(64,result.getString("documentSha256").length());
-            assertThrows(FileAlreadyExistsException.class, () -> service.generate(request("A.java")));
+            // Same live attempt must replay the durable artifact, not write another file.
+            var replay = service.generate(authorizedRequest);
+            assertEquals(Boolean.TRUE, replay.getBoolean("replayed"));
+            assertEquals(result.getString("artifactRecordId"), replay.getString("artifactRecordId"));
+            assertEquals(result.getString("documentSha256"), replay.getString("documentSha256"));
         } finally {server.stop(0);}
     }
 }

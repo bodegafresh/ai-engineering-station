@@ -25,6 +25,7 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS execution_workflows(workflow_id TEXT PRIMARY KEY, plan_json TEXT NOT NULL, created_at TEXT NOT NULL)");
             s.execute("CREATE TABLE IF NOT EXISTS execution_tasks(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,specialist_id TEXT NOT NULL,status TEXT NOT NULL,lease_token TEXT,lease_until TEXT,attempts INTEGER NOT NULL DEFAULT 0,evidence_ref TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id),FOREIGN KEY(workflow_id) REFERENCES execution_workflows(workflow_id))");
             s.execute("CREATE INDEX IF NOT EXISTS execution_tasks_status_idx ON execution_tasks(workflow_id,status)");
+            s.execute("CREATE TABLE IF NOT EXISTS execution_attempt_effects(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL,phase TEXT NOT NULL,artifact_id TEXT,document_path TEXT,document_sha256 TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id))");
             s.execute("CREATE TABLE IF NOT EXISTS execution_capability_authorizations(workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, capability TEXT NOT NULL, source_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(workflow_id,task_id), FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
@@ -134,6 +135,36 @@ public final class ExecutionHandoffStore implements AutoCloseable {
                 if(!rs.next()) return Optional.empty();
                 return Optional.of(new ExecutionCapabilityAuthorization(workflowId,taskId,rs.getString(1),rs.getString(2),rs.getString(3)));
             }
+        }
+    }
+    /** Check both durable operator grant and current unexpired lease. No trust in Event Bus flags. */
+    public synchronized ExecutionCapabilityAuthorization requireActiveDocumentation(String workflowId,String taskId,String attemptId,String sourcePath,String sourceSha256) throws Exception {
+        ExecutionDispatchPolicy.token(attemptId);
+        var grant=authorization(workflowId,taskId).orElseThrow(()->new SecurityException("No durable authorization"));
+        if(!"workspace-documentation".equals(grant.capability()) || !grant.sourcePath().equals(sourcePath)
+            || !grant.sourceSha256().equals(sourceSha256)) throw new SecurityException("Authorization mismatch");
+        try(var p=db.prepareStatement("SELECT 1 FROM execution_tasks WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>?")) {
+            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);p.setString(4,Instant.now().toString());
+            try(var rs=p.executeQuery()) {if(!rs.next())throw new SecurityException("Stale or missing lease");}
+        }
+        return grant;
+    }
+    /** Durable per-attempt effect state. Never overwrites a different artifact for the same attempt. */
+    public synchronized void recordEffect(String workflowId,String taskId,String attemptId,String phase,String artifactId,String documentPath,String documentSha256) throws Exception {
+        if(!Set.of("PREPARED","FILE_WRITTEN","ARTIFACT_RECORDED").contains(phase))throw new IllegalArgumentException("Invalid phase");
+        requireActiveDocumentation(workflowId,taskId,attemptId,
+            authorization(workflowId,taskId).orElseThrow().sourcePath(),
+            authorization(workflowId,taskId).orElseThrow().sourceSha256());
+        try(var p=db.prepareStatement("INSERT INTO execution_attempt_effects(workflow_id,task_id,attempt_id,phase,artifact_id,document_path,document_sha256,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workflow_id,task_id,attempt_id) DO UPDATE SET phase=excluded.phase,artifact_id=excluded.artifact_id,document_path=excluded.document_path,document_sha256=excluded.document_sha256,updated_at=excluded.updated_at")) {
+            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);p.setString(4,phase);
+            p.setString(5,artifactId);p.setString(6,documentPath);p.setString(7,documentSha256);p.setString(8,Instant.now().toString());p.executeUpdate();
+        }
+    }
+    public record Effect(String phase,String artifactId,String documentPath,String documentSha256) {}
+    public synchronized Optional<Effect> effect(String workflowId,String taskId,String attemptId) throws Exception {
+        try(var p=db.prepareStatement("SELECT phase,artifact_id,document_path,document_sha256 FROM execution_attempt_effects WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);
+            try(var rs=p.executeQuery()) {return rs.next()?Optional.of(new Effect(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4))):Optional.empty();}
         }
     }
     /** Legacy direct completion is disabled: all work must pass verified evidence and audit. */
