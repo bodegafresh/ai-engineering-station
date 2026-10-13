@@ -1,67 +1,65 @@
-# AIES — F3.5: idempotencia durable y journal monotónico
+# AIES — roadmap canónico y aprendizajes (F4–F6)
 
-## Base y alcance
+Este archivo es la **única fuente versionada** para próximos hitos y aprendizajes. Los archivos `docs/NEXT_HITOS_CONTEXT_*.md` se retiran del árbol activo; su historial permanece en Git. No se modifica ninguna otra documentación.
 
-Fuente revisada: `main` commit `393c5ab7c1cd2dac9ea3153546f7e8855c3dcd8f` (PR #45, F3.4). Este paquete es **un incremento de F3.5**, no una certificación de E2E ni de exactly-once general.
+## Arquitectura y reglas permanentes
+- Java 21, Quarkus, SOLID, arquitectura limpia y adaptadores separados.
+- Vert.x Event Bus para comunicación interna, REST solo en la frontera del operador.
+- Nunca bloquear event loop con JDBC, filesystem, `Future.get()` o inferencia: despachar esas operaciones mediante worker / `executeBlocking` apropiadamente.
+- SQLite durable, contratos inmutables, correlación de workflow/task/attempt, idempotencia, CAS y reintentos acotados.
+- `COMPLETED` requiere evidencia canónica y auditoría aprobada; jamás aceptar solo una respuesta del modelo como prueba.
+- Sin Python en el runtime Java; instaladores Bash, fail-closed, sin sobreescribir tests preexistentes.
+- Herramientas de ingeniería requieren autorización explícita; nunca trading real.
+- Aprendizajes de especialistas: casos verificables versionados, nunca cambios automáticos de autorización por LLM.
 
-Se mantiene Java 21, Quarkus, `ExecutionWorkerEngine`, `ExecutionHandoffStore`, `CommunicationStore`, `WorkspaceDocumentationService`, SQLite y Vert.x Event Bus local. No se crea otro orquestador, consumidor o framework.
+## F4.1 — Integración determinista (cerrado según main)
+Prueba de DAG de dos tareas, Event Bus local, SQLite real, correlación, evidencia, auditoría exacta, replay y reapertura. No equivale a E2E HTTP o modelo real.
 
-## Cambios de este incremento
+## F4.2 — Recuperación del worker (este incremento)
+### Cambios
+- La respuesta de `ExecutionWorkerEngine` refleja `DEAD` cuando SQLite agota los intentos, en vez de afirmar siempre `RETRY_PENDING`.
+- Si el `fail` no actualiza el lease (expiración/carrera), se retorna `RECONCILIATION_REQUIRED` y no se afirma un retry durable.
+- Tests deterministas para `executed=false`, correlación incorrecta, agotamiento de reintentos, reinicio de store y DAG bloqueado.
+- No se rebajan las verificaciones `executed=true`, correlación ni auditoría.
 
-1. `CommunicationStore.appendIdempotent(operationKey, kind, workflowId, taskId, payload)`: añade tabla de claves idempotentes en **la misma transacción SQLite** que el registro. Una repetición exacta retorna el mismo ID incluso después de reiniciar; una repetición conflictiva falla. `append()` sigue disponible para otros productores.
-2. El worker y el documentador utilizan `execution-{attemptId}-artifact` para evitar duplicar registros cuando una caída ocurre entre `communication.appendIdempotent()` y `ExecutionHandoffStore.recordEffect(ARTIFACT_RECORDED)`.
-3. `ExecutionHandoffStore.recordEffect()` admite solo `PREPARED -> FILE_WRITTEN -> ARTIFACT_RECORDED`, con replay idéntico y CAS en el avance. No permite saltos ni retrocesos.
-4. `ExecutionIdempotencyTest` cubre replay tras reinicio, conflictos, orden de fases y persistencia.
-
-## Limitaciones abiertas y riesgos P0
-
-- No hay atomicidad entre filesystem, `communication.sqlite` y `execution-handoff.sqlite`. La idempotencia en el destino elimina duplicados del registro para el **mismo intento**, pero no impide archivos huérfanos, ni duplicados de trabajo entre intentos distintos.
-- La exclusión entre solicitudes concurrentes del mismo intento **no está implementada**. El CAS de fase evita ciertas actualizaciones inconsistentes, pero dos llamadas simultáneas pueden invocar Ollama y competir por el mismo archivo. Requiere `claimEffect` con propietario, expiración y fencing, o single-flight por clave con recuperación durable.
-- Si se cae después de publicar archivo pero antes de registrar `FILE_WRITTEN`, la recuperación actual rechaza el archivo no journalizado. Requiere staging/reconciliación con evidencia verificable, sin aceptar contenido no autorizado.
-- `approveEvidence` es un método público del store y no valida por sí mismo el contenido del registro de auditoría. Debe limitarse su uso y centralizar el cierre en una frontera de verificación segura, con hash material comprobado inmediatamente antes del commit.
-- El worker usa un modelo HTTP bloqueante; seguir usando `vertx.executeBlocking(..., false)` en los consumidores. No ejecutar SQLite, filesystem o `CompletableFuture.get()` sobre el event loop.
-- La serialización JSON del payload debe mantenerse estable para la comparación SHA-256; versiones de contrato nuevas deben introducir versión de operación si cambian representación.
-
-## Criterios para cerrar completamente F3.5
-
-1. Concurrencia real: dos solicitudes idénticas del mismo intento no llaman dos veces al modelo ni publican dos archivos.
-2. Inyección de crash en cada frontera: antes/después de archivo, registro de comunicación, journal, stageEvidence, audit y completion.
-3. Validar la aprobación dentro de una frontera controlada y comprobar propiedad, decisión, evidencia y SHA-256.
-4. Recuperar tras reinicio de Quarkus con SQLite y filesystem reales.
-5. Reintentos con nuevo lease no pueden aprobar artefactos del lease anterior.
-6. Tests Gradle completos y smoke E2E con Ollama simulado; no afirmar E2E antes de realizarlo.
-
-## F4 — Primer E2E real y entrega final
-
-1. **Preparación:** workspace temporal aislado con archivo Java pequeño, modelo Ollama simulado para CI y real para smoke local.
-2. **Flujo:** intake -> requirements -> plan -> DAG -> aprobación de operador -> `ExecutionWorkerEngine` -> Event Bus -> documentador -> Markdown -> SHA-256 -> `ExecutionQualityGate` -> estado `COMPLETED`.
-3. **Entrega:** manifiesto durable por workflow con task ID, attempt ID, artifact ID, ruta, hash, audit ID, decisión, timestamps, versión de modelo y limitaciones; no inventar evidencia.
-4. **Pruebas negativas:** archivo modificado, autorización ausente, lease vencido, duplicación, auditoría rechazada, caída/reinicio, dependencias bloqueadas.
-5. **Cierre:** documentar comandos, entorno, tiempos, resultados y fallos; ejecutar la suite completa. La primera demo no implica que AIES pueda ejecutar ingeniería arbitraria de manera autónoma.
-
-## F5 y F6
-
-- **F5 — Engineering Tools:** patch y verificación Docker bajo permisos explícitos, límites, aislamiento y evidencia. Nunca shell arbitrario ni trading real.
-- **F6 — Operación:** métricas, trazas, backpressure, límites de concurrencia, recuperación, seguridad, pruebas de carga y compatibilidad Gradle 9. Retirar tests que dependan de `complete()` marcado `forRemoval` cuando exista alternativa comprobada.
-- **Aprendizaje del especialista técnico:** registrar fallos y soluciones como casos versionados y probados en `TechnicalSpecialistGuidance`, no permitir que un LLM modifique políticas de autorización automáticamente.
-
-## Instalación y verificación
-
+### Validación
 ```bash
-./gradlew :apps:control-plane:test --tests '*ExecutionIdempotencyTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*F42ExecutionRecoveryTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*F41DeterministicWorkflowE2ETest' --no-daemon --console=plain
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
-git status --short
 ```
 
-**Estado de validación:** código preparado a partir de las fuentes revisadas en GitHub; Gradle aún debe ejecutarse en el checkout local. Si falla, no abrir PR hasta corregirlo.
+### Riesgos no cerrados
+- Un timeout puede ser ambiguo: el especialista pudo producir un efecto externo. No reintentar automáticamente capacidades con efectos materiales sin reconciliación durable y fencing.
+- El catch de `runOne` puede ocultar fallas secundarias del store; mejorar diagnósticos seguros y métricas en F4.3.
+- SQLite y filesystem no son una única transacción. Falta crash injection en todas las fronteras.
+- Los tests de este hito no demuestran concurrencia multiproceso ni resistencia a saturación del event loop.
 
-## F3.5.3 — Verified Completion Boundary (2026-10-13)
+## F4.3 — E2E de aceptación operativa
+1. CLI Bash reproducible con preflight de Ollama, Quarkus, workspace descartable y tokens válidos.
+2. Prueba de punta a punta intake -> plan -> aprobación -> ejecución -> material -> hash -> auditoría -> manifiesto final.
+3. Casos negativos: grant ausente, SHA alterado, lease vencido, respuesta tardía, auditoría bloqueada, replay y reinicio.
+4. Manifiesto durable read-only con workflow/task/attempt/artifact/audit, SHA-256, versión de modelo, tiempos y limitaciones.
+5. Medir llamadas reales, duración, latencias, errores y recursos; nunca inventar resultados.
+6. Cierre: suite completa y smoke real ejecutado por el operador, evidencia adjunta al PR.
 
-- `approveEvidence` (legacy) falla cerrado; `approveVerifiedEvidence` valida evidencia canónica y auditoría persistida antes de CAS a COMPLETED.
-- `ExecutionQualityGate` conserva Event Bus y delega transición al store verificador.
-- Tests de rechazo, aprobación exacta, replay y desbloqueo de DAG.
-- F4.1: E2E reproducible con modelo simulado, falla/reinicio y reporte final.
-- F4.2: Ollama local real con permisos explícitos y resultados materiales.
-- F4.3: aceptación y observabilidad con evidencia de ejecución.
-- Riesgo pendiente: SQLite y archivo físico no comparten transacción; revisar TOCTOU para amenazas locales.
+## F5 — Herramientas controladas
+- Parches de código y verificación aislada con permisos explícitos, límites de CPU/memoria/tiempo, allowlist de rutas y comandos, Docker reproducible.
+- Restringir salida de datos, paths, secretos y acceso a red. Auditar cada efecto.
+- Aplicar capacidad solo al especialista técnico asignado y con evidencia de prueba.
+
+## F6 — Operación y endurecimiento
+- Métricas y trazas de Event Bus, cola, worker, SQLite, modelo y auditoría.
+- Backpressure, fairness, límites de concurrencia y carga.
+- Recuperación ante crashes y procesos concurrentes; pruebas de seguridad y threat model.
+- Compatibilidad Gradle 9 y eliminación controlada de APIs `forRemoval`.
+- Runbooks, rollback, CI y criterios finales de aceptación.
+
+## Aprendizajes registrados
+1. `DriverManager` puede fallar bajo classloaders Quarkus; usar apertura JDBC compatible con la configuración validada.
+2. `List.of().contains(null)` puede lanzar NPE; preferir validación de nulos segura.
+3. Una respuesta del especialista debe declarar `executed=true` además de la correlación correcta.
+4. Los tests E2E deben verificar el estado durable, no solo el JSON de respuesta.
+5. Los instaladores no deben usar patches corruptos, rutas duplicadas ni sobrescribir archivos existentes sin revisión.
+6. Conservar un solo roadmap canónico; el historial Git preserva los incrementos anteriores.
