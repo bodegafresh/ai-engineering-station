@@ -314,3 +314,16 @@ AIES_WORKFLOW_ID=... AIES_WORKSPACE_TOKEN=... bash scripts/f43g5-operator-e2e.sh
 - Automate real intake and explicit operator approval path using existing REST contracts; do not manufacture plan or audit decisions.
 - Record real model identity, duration, event-loop metrics and SHA-256 of current material bytes; test crash/restart, 429, stale lease, replay and tamper detection.
 - Close F4 only with passing observed E2E and attached evidence; then F5 controlled engineering tools and F6 operations.
+
+## F4.3-G6 — Real intake-to-acceptance operator certification slice (local execution pending)
+- Added `scripts/f43g6-intake-certification.sh` using actual Quarkus planning REST, durable planning audit and explicit operator acknowledgement before importing; delegates worker/quality to G5's production Event Bus path.
+- Checks workflow correlation, approved planning audit record, final canonical SHA-256 and APPROVED audit linkage. Does not generate synthetic decisions.
+- Fail closed on duplicate intake, transport ambiguity, rejected plan and unexpected states. Never automatically retries ambiguous mutations.
+- Explicit approval acknowledgement is client-side only; operator token remains the server authorization. The first no-approval run creates intake then stops; continue through existing import and G5 endpoints after reviewing the persisted plan.
+- Still pending: observed Quarkus/Ollama E2E evidence, material bytes, crash/restart, 429 saturation, stale lease, event-loop/worker metrics, actual model identity. F4 remains OPEN; do not start F5 based solely on this script.
+### Validate
+```bash
+bash -n scripts/f43g6-intake-certification.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
