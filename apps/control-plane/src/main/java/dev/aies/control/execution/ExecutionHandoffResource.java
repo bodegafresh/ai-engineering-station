@@ -27,10 +27,17 @@ public class ExecutionHandoffResource {
                                   @PathParam("id") String id) throws Exception {
         auth(token);
         try (var planning = new PlanningStore(java.nio.file.Path.of(root).resolve("planning.sqlite"),mapper);
+             var communication = new dev.aies.control.communication.CommunicationStore(
+                 java.nio.file.Path.of(root).resolve("communication.sqlite"), mapper);
              var execution = open()) {
             var snapshot = planning.find(id).orElseThrow(NotFoundException::new);
             if (!"READY_FOR_ASSIGNMENT".equals(snapshot.status()) || snapshot.auditRecordId() == null || snapshot.plan() == null)
                 throw new ClientErrorException("Workflow must have an approved audit",409);
+            try {
+                ExecutionPlanAuditVerifier.requireApproved(snapshot, communication);
+            } catch (SecurityException rejected) {
+                throw new ClientErrorException("Planning evidence is not approved",409);
+            }
             boolean created;
             try {created = execution.importPlan(snapshot.plan());}
             catch (IllegalArgumentException|IllegalStateException e) {throw new ClientErrorException("Invalid execution plan",409);}
