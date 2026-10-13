@@ -100,6 +100,7 @@ public class PlanningEventBus {
     + mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snapshot.plan())
     + "\n\n## State\n"
     + "PRE-EXECUTION PLAN. No implementation or empirical results claimed.\n";
+    content = PlanningProvenance.embed(snapshot.intake(),snapshot.plan(),content);
     var artifact=PlanningArtifactEvidence.artifact(snapshot.intake(),snapshot.plan(),content);
     var saved=comm.append("ARTIFACT",id,"planning-contract",artifact);
     if(!store.attachArtifact(id,saved.id()))throw new IllegalStateException("Concurrent plan update");

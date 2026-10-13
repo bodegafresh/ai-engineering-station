@@ -18,9 +18,9 @@ class PlanningArtifactQualityPolicyTest {
         var plan=PlanningPolicy.build(in,Map.of("r1",new PlanningContracts.Task("task-r1","r1","software",List.of(),
             "software-engineer",3,r.statement(),r.given(),r.when(),r.then(),r.verification())));
         var mapper=new com.fasterxml.jackson.databind.ObjectMapper();
-        return PlanningArtifactEvidence.artifact(in,plan,"# Planning contract\n\n## Requirements and task assignments\n\n"
+        return PlanningArtifactEvidence.artifact(in,plan,PlanningProvenance.embed(in,plan,"# Planning contract\n\n## Requirements and task assignments\n\n"
             +mapper.writerWithDefaultPrettyPrinter().writeValueAsString(plan)
-            +"\n\n## State\nPRE-EXECUTION PLAN. No implementation or empirical results claimed.\n");
+            +"\n\n## State\nPRE-EXECUTION PLAN. No implementation or empirical results claimed.\n"));
     }
     private CommunicationContracts.Artifact changed(CommunicationContracts.Artifact a,String content,List<String> refs) {
         return new CommunicationContracts.Artifact(a.schemaVersion(),a.workflowId(),a.taskId(),a.producer(),

@@ -426,3 +426,22 @@ git diff --check
 - A source URI list is not equivalent to a cryptographically verifiable provenance graph.
 - Generic markdown-quality heuristics cannot replace contract-specific checks; fail closed on missing/corrupted canonical data.
 - Test-local structural APPROVED is not evidence of real semantic Ollama APPROVED.
+
+## F4.3-G10-C — Exact immutable planning source manifest (local validation pending)
+- Adds `PlanningProvenance` to embed canonical JSON source mapping (`id`, `uri`, lowercase SHA-256 `digest`) into the same immutable `planning-plan` artifact before append. Mapping is derived from the validated intake and exact requirements; no synthetic source is introduced.
+- Structural audit fails closed on missing/duplicate manifest, malformed JSON, invalid SHA format, mismatched source IDs, duplicate URIs and disagreement with artifact `sourceRefs`.
+- Production `PlanningEventBus.prepareAudit` generates manifest before durable append; the G10-B unit fixture is updated to use the same producer.
+- **Limitations:** digest is an *intake claim*, not a byte-level verification of external material; manifest is not independently signed, and an attacker able to rewrite all artifact fields and stored SHA could forge a self-consistent record. Historical records are immutable and will not be backfilled. No actual Ollama/model timing or E2E certified.
+- **G10-D next:** revision lifecycle with immutable parent lineage, explicit operator acknowledgement, no mutation of rejected audit, bounded attempts and idempotent replay. Before F4 closure also require G10-E operator script repairs and G10-F observed Quarkus/Ollama E2E plus negative recovery/429/lease/material tests.
+- **F4 remains OPEN.** Do not advance to F5.
+### Validate
+```bash
+./gradlew :apps:control-plane:test --tests '*PlanningArtifactQualityPolicyTest' --tests '*PlanningRestIntegrationTest' --tests '*PlanningArtifactEvidenceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### G10-C hotfix — Markdown provenance newline serialization
+- Corrected escaped `\\n` literals in `PlanningProvenance.embed`: actual LF delimiters are required for the canonical markdown section parser. The earlier implementation emitted literal backslash-n sequences, causing structural audit to reject valid plans and the Quarkus planning integration to fail closed.
+- The structural policy remains strict; no bypass or approval fabrication. Historical immutable rejected records remain unchanged. New workflow IDs are required for live recertification.
+- Run the targeted planning tests and full clean suite before merging. This package was syntax-checked, not Gradle-executed by its author.
