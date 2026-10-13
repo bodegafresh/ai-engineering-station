@@ -1,58 +1,64 @@
-# AIES — Continuidad tras Hito F1: inferencia real con modelo local
+# AIES — continuidad después de F2 (workspace documentation)
 
-**Baseline inspeccionado:** `main` SHA `3913c77a28688005efa933becff220f1406c9e87` (PR #39, Hito E).
+Baseline inspeccionado: `main` commit `301bde7216e37261719a6b28652550d9fc83bc5c`, merge PR #40.
 
-## Alcance entregado
+## Arquitectura y objetivo
 
-- `RealSpecialistEventBus`: consumidor opt-in de `ExecutionWorkerEngine.EXECUTE` (`aies.execution.specialist.execute.v1`). No se altera el worker, catálogo, SQLite, contratos ni auditor.
-- `OllamaSpecialistExecutor`: llama realmente a Ollama local `POST /api/generate` con HTTP Java, tiempo limitado, máximo 1200 tokens solicitados, sin herramientas ni acceso a archivos; devuelve `executed=true` **solo después de respuesta real** y `verification=UNVERIFIED_MODEL_OUTPUT`.
-- `RealSpecialistPolicy`: permite exclusivamente IDs/capacidades existentes en `SpecialistEventBus`: `researcher/research`, `requirements-auditor/requirements|audit`, `software-engineer/software|implementation`, `experiment-analyst/statistics|experiments`. Valida inputs y limita tamaño. No inventa otro catálogo.
-- Tests: contrato, entradas inválidas, URL local y petición HTTP real contra servidor de prueba en localhost (sin dependencia de Ollama).
-- No se habilita automáticamente. Sin escrituras en proyectos, ejecución de comandos, navegador, ni herramientas arbitrarias.
+AIES conserva intake universal, metodología, planificación, DAG durable, especialistas existentes, Event Bus interno, comunicación canónica, auditoría y quality gate. F2 añade **una operación explícita, opt-in y aprobada por operador** para documentar un archivo Java real. No crea un segundo catálogo, ni un framework de agentes, ni un ejecutor de shell. `software-engineer/software` reutiliza el ID/capacidad del catálogo existente.
 
-## Activación local controlada
+## F2 entregado
 
-Con Ollama ejecutándose y el modelo descargado, configurar en `.env`/entorno, **no secretos en Git**:
+- `WorkspaceDocumentationService`: valida `workflowId`, `taskId`, `attemptId`, aprobación explícita, ruta relativa, archivo Java regular dentro del workspace, no symlinks, tamaño máximo y límite de prompt. Lee el contenido real, calcula SHA-256, solicita inferencia mediante `OllamaSpecialistExecutor`, verifica correlación de intento, escribe Markdown en `.aies/generated-docs/` mediante archivo temporal y movimiento atómico, calcula SHA-256 de salida y crea un artefacto canónico `execution-result` en `CommunicationStore`.
+- `WorkspaceDocumentationEventBus`: dirección `aies.execution.documentation.generate.v1`, consumidor local opt-in, procesamiento bloqueante delegado por Vert.x; REST no expuesto.
+- Tests: rechazos por aprobación, path traversal, ruta absoluta, archivo no Java, symlink; petición HTTP real a un servidor de prueba, archivo material y artefacto durable.
+- Configuración por defecto deshabilitada: `AIES_EXECUTION_DOCUMENTATION_ENABLED=false`, `AIES_EXECUTION_DOCUMENTATION_WORKSPACE_ROOT=./projects`, `AIES_EXECUTION_DOCUMENTATION_TIMEOUT_SECONDS=90`.
 
-```
-AIES_EXECUTION_REAL_SPECIALIST_ENABLED=true
-AIES_EXECUTION_WORKER_ENABLED=true
-AIES_EXECUTION_QUALITY_ENABLED=true
-AIES_MODEL_BASE_URL=http://127.0.0.1:11434
-AIES_MODEL_NAME=qwen3:4b
-AIES_EXECUTION_REAL_SPECIALIST_TIMEOUT_SECONDS=25
-AIES_EXECUTION_WORKER_TIMEOUT_SECONDS=30
-AIES_EXECUTION_LEASE_SECONDS=60
+**Límite fundamental:** F2 NO enlaza automáticamente la operación documental con `ExecutionWorkerEngine.runOne`, ni ejecuta el Quality Gate, ni finaliza tareas. La operación requiere solicitud interna explícita con `approved=true`; no equivale a autenticación del llamante, por lo que se debe restringir el emisor del Event Bus a código de operador autorizado. No habilitar con entrada de usuario sin autorización real. El SHA-256 demuestra integridad de bytes, no exactitud semántica del documento. La persistencia del archivo y la base de datos no es una transacción atómica; el replay puede encontrar un archivo ya creado y requiere reconciliación. El documento creado no es un test de código ejecutado.
+
+## Contrato interno para F2
+
+Solicitud a `aies.execution.documentation.generate.v1`:
+
+```json
+{"workflowId":"wf-1","taskId":"task-1","attemptId":"attempt-1","approved":true,"sourcePath":"src/main/java/example/A.java"}
 ```
 
-**Importante:** para un modelo lento, ajustar `real-specialist.timeout-seconds < worker.timeout-seconds < lease-seconds`. Los valores por defecto son deliberadamente acotados y pueden ser insuficientes para un primer calentamiento de modelo. Asegurar que las variables se traducen correctamente a propiedades MicroProfile en la configuración efectiva.
+Respuesta: `status=EVIDENCE_PENDING`, `documentPath`, `documentSha256`, `sourcePath`, `sourceSha256`, `artifactRecordId`, `verification=FILE_HASH_VERIFIED_NOT_AUDITED`. No implica `COMPLETED`.
 
-## Pruebas de aceptación locales
+## Aprendizajes para definiciones de especialistas
 
-1. `./gradlew :apps:control-plane:test --tests '*RealSpecialistPolicyTest' --tests '*OllamaSpecialistExecutorTest' --no-daemon --console=plain`
-2. `./gradlew clean test --no-daemon --console=plain`
-3. `git diff --check`; inspeccionar archivos nuevos y backups no versionados.
-4. Validación operativa separada: importar un plan ya auditado con tarea `researcher/research`, activar consumidor y worker, enviar `aies.execution.worker.run-one.v1` desde una prueba/invocador autorizado; comprobar respuesta real y artefacto `execution-result` en `communication.sqlite`.
-5. Solicitar `aies.execution.quality.review.v1`; verificar estado `COMPLETED` **solo si auditoría aprobada**. El contenido de LLM sigue sin verificación material.
+**Especialista técnico (`software-engineer`)**: añadir en su definición de prompts/competencias que (1) diferencie inspección real del repositorio de inferencia textual; (2) cite rutas relativas y hashes reales aportados por herramientas; (3) no afirme tests ejecutados sin logs/exit codes; (4) separe hallazgos observados de suposiciones; (5) produzca documentación de API pública, dependencias, limitaciones y pasos de verificación; (6) no invente comandos ni resultados. Mantener estas instrucciones como políticas versionadas del especialista, no como memoria libre ni cambio automático de capacidades. No cambiar `SpecialistCatalog` sin revisión de capacidades y pruebas.
 
-## Riesgos críticos y deuda para F2/F3
+## F3 — seguridad, correlación y recuperación (bloqueante para E2E autónomo)
 
-1. **E2E todavía no demostrado:** no existe prueba automática completa `intake → plan → worker → modelo real → artefacto → gate → entrega`. El test HTTP valida inferencia, no el workflow.
-2. **Revisión material:** auditoría estructural no comprueba corrección técnica ni existencia de fuentes; no afirmar que el modelo leyó el repositorio. Para documentación técnica, integrar lectura de workspace autorizada y evidencia de archivos/hash, con verificador específico.
-3. **Bypass heredado:** `ExecutionHandoffStore.complete()` aún permite completar con solo una referencia; restringirlo y agregar test de regresión antes de activar automatización no supervisada.
-4. **Aprobación a nivel store:** `approveEvidence` recibe un `auditRecordId` pero no lo persiste; la relación se verifica en `ExecutionQualityGate` solamente. Añadir journal durable de aprobaciones.
-5. **Crash/replay:** `communication.sqlite` y `execution-handoff.sqlite` separados; un crash después de append y antes de stage genera artefactos huérfanos. Diseñar reconciliación idempotente por `workflowId/taskId/attemptId` y fencing.
-6. **Salida del modelo:** el worker actualmente no valida `attemptId` devuelto por el adaptador. Añadir comprobación explícita y test de respuesta tardía/duplicada.
-7. **Especialistas reales:** el adaptador ejecuta inferencia local, no un agente con herramientas. Para ingeniería de software implementar workspace aislado, lectura/escritura acotada, aprobación de acciones, test runner sandbox y captura de evidencias reales. No prometer ejecución de código a partir de generación de texto.
-8. **Final delivery:** manifiesto inmutable con referencias verificadas a artefactos y auditorías, estados `COMPLETED/PARTIAL/BLOCKED`, consulta REST autorizada y pruebas de reinicio.
-9. **Resiliencia:** multiinstancia SQLite, locks, expiración de leases, propagación de `DEAD`, costos/tokens, métricas y límites de concurrencia.
-10. **Seguridad:** el adaptador limita URL a loopback y no permite herramientas, pero una máquina con Ollama expuesto o redireccionamientos HTTP debe ser endurecida; definir políticas de acceso y aprobación por operador.
+1. Enlazar el worker y la herramienta de documentación por un adaptador de capacidades del catálogo existente; trasladar `sourcePath` y autorización a un contrato durable explícito, sin extraer rutas del objetivo con LLM.
+2. Validar `attemptId` en `ExecutionWorkerEngine` antes de aceptar respuesta y añadir pruebas de intento tardío, duplicado y lease vencido.
+3. Cerrar `ExecutionHandoffStore.complete()` para impedir `COMPLETED` con URL o referencia no auditada; migrar consumidores con compatibilidad explícita.
+4. Vincular `auditRecordId` de manera durable al estado aprobado; exigir validación material del archivo y del hash antes de auditar, además del registro canónico.
+5. Introducir reconciliación idempotente para archivos/artefactos huérfanos entre filesystem, `communication.sqlite` y `execution-handoff.sqlite`; registrar intentos y estado terminal.
+6. Reforzar autorización real de la operación: token/identidad de operador, controles por workspace y evitar que el flag `approved` sea autoafirmado por el modelo.
+7. Seguridad de filesystem: comprobar hardlinks, cambios concurrentes de rutas y symlinks; usar mecanismos de acceso seguro o workspace aislado cuando se amplíe la superficie. Añadir límites de volumen y limpieza.
 
-## Próximos incrementos
+## F4 — entrega final y E2E
 
-- **F2 — Vertical slice documentador verificable:** lectura explícitamente autorizada de archivo Java dentro del workspace, hashes, prompts con contexto real, escritura controlada de Markdown, test de contenido y procedencia. Mantener `CommunicationStore` como registro canónico.
-- **F3 — Recovery & audit hardening:** fencing de intento, outbox/inbox o reconciliación, bloqueo de bypass, vínculo durable de auditoría y reintentos con backoff.
-- **F4 — Final delivery + E2E:** manifiesto, REST de consulta, integración real con Ollama local y prueba E2E automatizada con fake HTTP + prueba opt-in contra modelo real. Escenarios de timeout, reinicio, rechazo, duplicación y dependencia DAG.
-- **F5 — Software agent con herramientas:** workspace sandbox, herramientas allowlist, permisos explícitos, ejecución de tests real, evidencia de comandos/exit codes y rollback seguro.
+- Manifiesto durable de workflow con estados `COMPLETED`, `PARTIAL`, `BLOCKED`; trazabilidad requisito→tarea→archivo/hash→artefacto→auditoría; consulta REST autorizada.
+- E2E automático con servidor HTTP simulado: intake→plan auditado→worker→herramienta real→archivo→verificación material→auditoría→manifiesto; E2E opt-in con Ollama local real.
+- Pruebas de caída entre escritura y registro, reintento, dependencia DAG, auditoría rechazada y recuperación.
 
-**Definición de listo para E2E con resultado final:** un workflow aprobado ejecuta trabajo real, persiste artefactos, demuestra sus criterios de aceptación, supera el quality gate, produce un manifiesto verificable y se recupera de fallos sin duplicar efectos. F1 por sí solo NO satisface esa definición.
+## F5 — agente de software con herramientas
+
+Herramientas allowlist, workspace aislado, revisión de cambios, aprobación humana, test runner en contenedor sin red, evidencia de comandos reales/exit codes, rollback y límites de costo. Nunca dar acceso arbitrario a shell por prompt.
+
+## Verificación local
+
+```bash
+./gradlew :apps:control-plane:test --tests '*WorkspaceDocumentationServiceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+No considerar F2 E2E completo hasta implementar y demostrar F3 y F4.
+
+### Política incorporada en código
+
+`TechnicalSpecialistGuidance.VERSION=f2.1` centraliza instrucciones revisables para `software-engineer`, aplicadas al prompt del documentador. Es una política explícita y versionada, **no** aprendizaje automático ni modificación silenciosa del catálogo de especialistas.
