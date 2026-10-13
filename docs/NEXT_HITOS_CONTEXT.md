@@ -218,3 +218,22 @@ Un worker pool no constituye control de admisión: es necesario limitar las infe
 ### Después de F4
 - **F5**: herramientas de ingeniería autorizadas, sandbox, límites de recursos y auditoría de efectos.
 - **F6**: operación, métricas, resiliencia multiproceso, seguridad, runbooks y deuda Gradle.
+
+## F4.3-G1 — Integración de auditoría y aceptación (validación local pendiente)
+- Prueba determinista `F43GQualityGateIntegrationTest`: HTTP fixture local → adaptador real de transporte → Vert.x Event Bus → worker → SQLite → `ExecutionQualityGate` → manifiesto.
+- Demuestra que auditoría BLOCKED mantiene el DAG detenido, que aprobación vinculada al artefacto habilita la dependencia, y que SQLite reabierto conserva COMPLETED.
+- **Limitación fundamental:** el servidor HTTP y las decisiones de auditoría son fixtures del test; NO son Ollama ni auditoría semántica real. `VERIFIED` solo significa consistencia canónica.
+- No modifica contratos productivos, permisos, stores ni flags. Sin Python, shell de agente ni trading real.
+
+### Validación
+```bash
+./gradlew :apps:control-plane:test --tests '*F43GQualityGateIntegrationTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### F4.3-G2 obligatorio para cerrar F4
+1. Harness opt-in con Ollama real, aprobación explícita del operador y auditoría real, sin respuestas ni decisiones fabricadas.
+2. Recolección de IDs, tiempos, modelo efectivo, SHA-256 y persistencia tras reinicio; reporte versionado sin secretos.
+3. Negativos: timeout ambiguo, respuesta tardía, lease vencido, saturación, rechazo, replay, material alterado.
+4. Demostrar no bloqueo de event loop, límites de recursos y no duplicación de efectos; sin esto F4 sigue abierto.
