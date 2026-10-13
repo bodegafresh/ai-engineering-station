@@ -461,3 +461,19 @@ git diff --check
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
+
+## F4.3-G10-E — Fail-closed operator CLI hardening (local validation pending)
+- Replaces G5 and G6 scripts with strict Bash controls and a shared `f43g10e-http.sh` transport. Uses only centralized `AIES_WORKSPACE_CHANGES_TOKEN`, not the removed `AIES_WORKSPACE_TOKEN`.
+- Credentials supplied through curl `--config -` via stdin, JSON escaped, not argv. Only explicit loopback URLs; 200/201 require JSON object; 404 and other errors are handled without assuming JSON. No automatic retry after ambiguous mutation.
+- G6 supports `create`, `inspect`, `resume`. `inspect` does not mutate and verifies exact canonical intake against durable planning snapshot. `resume` requires the same intake, an actual `READY_FOR_ASSIGNMENT` plan with artifact and audit IDs, explicit `AIES_OPERATOR_APPROVE_WORKFLOW`, and absent execution acceptance before a **single** import attempt. It does not automatically execute the worker or claim a human reviewed the plan.
+- G5 checks canonical acceptance before execution, rejects ambiguous/pending/dead/running tasks, and runs one bounded worker attempt and actual quality review at a time. Non-approved audit never yields a success assertion. Existing `/tasks` contract is a top-level JSON array, not `{tasks:[]}`.
+- Shell regression fixtures exercise non-JSON 404, strict mode and token non-disclosure in curl argv/logs. `scripts/f43g10e-shell-tests.sh` is local, not a Quarkus/Ollama test. G9 remains read-only but still passes token in curl argv and **requires follow-up security remediation**; do not claim G9 hardened by this increment.
+- Known limits: G6 `create` cannot distinguish unauthorized 404 from absent workflow, but never retries the POST. G6 `resume` is an operator acknowledgment, not cryptographic proof of review. G5 worker actions can time out after durable side effects: operator must reconcile manually. G9 restart proof, model identity, timing, 429, lease, material tamper and real end-to-end certification remain pending.
+- **F4 OPEN**. Next G10-F: harden G9 token handling and implement observed Quarkus/Ollama operator certification, restart and negative cases. Do not start F5 until observed evidence and sign-off.
+### Validation
+```bash
+bash scripts/f43g10e-shell-tests.sh
+bash -n scripts/f43g5-operator-e2e.sh scripts/f43g6-intake-certification.sh scripts/f43g9-restart-certify.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
