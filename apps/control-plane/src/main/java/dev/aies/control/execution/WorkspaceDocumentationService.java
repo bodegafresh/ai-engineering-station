@@ -71,6 +71,12 @@ public final class WorkspaceDocumentationService {
             .put("attemptId", attemptId).put("specialistId", "software-engineer")
             .put("capability", "software").put("objective", objective);
         try(var store=handoff()) {store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);}
+        // Atomic durable reservation: concurrent Event Bus deliveries must not invoke
+        // the model twice for the same attempt. A crash after reservation is ambiguous.
+        try(var store=handoff()) {
+            if(!store.reserveModelInvocation(workflowId,taskId,attemptId,sourcePath,sourceSha))
+                throw new IllegalStateException("Model invocation already reserved; reconcile before retry");
+        }
         var response = model.execute(request);
         if (!attemptId.equals(response.getString("attemptId"))) throw new SecurityException("Attempt mismatch");
         String markdown = response.getString("content");

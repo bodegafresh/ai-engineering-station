@@ -26,6 +26,10 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS execution_tasks(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,specialist_id TEXT NOT NULL,status TEXT NOT NULL,lease_token TEXT,lease_until TEXT,attempts INTEGER NOT NULL DEFAULT 0,evidence_ref TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id),FOREIGN KEY(workflow_id) REFERENCES execution_workflows(workflow_id))");
             s.execute("CREATE INDEX IF NOT EXISTS execution_tasks_status_idx ON execution_tasks(workflow_id,status)");
             s.execute("CREATE TABLE IF NOT EXISTS execution_attempt_effects(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL,phase TEXT NOT NULL,artifact_id TEXT,document_path TEXT,document_sha256 TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id))");
+            // Durable single-flight for a documentation model invocation, scoped to an attempt.
+            // The row is intentionally not leased: an ambiguous crash fails closed instead of
+            // silently issuing a second external model request.
+            s.execute("CREATE TABLE IF NOT EXISTS execution_model_invocations(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL,started_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id))");
             s.execute("CREATE TABLE IF NOT EXISTS execution_capability_authorizations(workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, capability TEXT NOT NULL, source_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(workflow_id,task_id), FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
@@ -148,6 +152,29 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             try(var rs=p.executeQuery()) {if(!rs.next())throw new SecurityException("Stale or missing lease");}
         }
         return grant;
+    }
+    /**
+     * Reserve the external model call at most once for this attempt across processes.
+     * A crash after reservation is ambiguous: callers must reconcile or explicitly
+     * start a new authorized attempt, never silently repeat the same call.
+     */
+    public synchronized boolean reserveModelInvocation(String workflowId,String taskId,String attemptId,
+                                                        String sourcePath,String sourceSha256) throws Exception {
+        requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha256);
+        var effect=effect(workflowId,taskId,attemptId).orElseThrow(
+            () -> new IllegalStateException("Effect must be prepared before model reservation"));
+        if(!"PREPARED".equals(effect.phase()))throw new IllegalStateException("Model reservation after material effect");
+        try(var p=db.prepareStatement("INSERT OR IGNORE INTO execution_model_invocations(workflow_id,task_id,attempt_id,started_at) VALUES(?,?,?,?)")) {
+            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);
+            p.setString(4,Instant.now().toString());
+            return p.executeUpdate()==1;
+        }
+    }
+    public synchronized boolean modelInvocationReserved(String workflowId,String taskId,String attemptId) throws Exception {
+        try(var p=db.prepareStatement("SELECT 1 FROM execution_model_invocations WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+            p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);
+            try(var rs=p.executeQuery()) {return rs.next();}
+        }
     }
     /** Durable per-attempt effect state. Never overwrites a different artifact for the same attempt. */
     public synchronized void recordEffect(String workflowId,String taskId,String attemptId,String phase,String artifactId,String documentPath,String documentSha256) throws Exception {
