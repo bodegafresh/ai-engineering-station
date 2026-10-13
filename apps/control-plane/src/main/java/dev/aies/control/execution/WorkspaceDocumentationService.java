@@ -78,7 +78,7 @@ public final class WorkspaceDocumentationService {
         String documentSha = sha256(Files.readAllBytes(output));
         var artifact = CommunicationContracts.validate(new CommunicationContracts.Artifact(
             CommunicationContracts.VERSION, workflowId, taskId, "software-engineer", "execution-result", "text/markdown",
-            markdown, java.util.List.of()));
+            markdown, java.util.List.of(WorkspaceMaterialEvidence.reference(root.relativize(output).toString(), documentSha))));
         String artifactId;
         try (var communication = new CommunicationStore(dataRoot.resolve("communication.sqlite"), mapper)) {
             artifactId = communication.append("ARTIFACT", workflowId, taskId, artifact).id();

@@ -20,10 +20,11 @@ public class ExecutionQualityEventBus {
     @ConfigProperty(name="aies.execution.quality.enabled", defaultValue="false") boolean enabled;
     @ConfigProperty(name="aies.agent-communications.data-root", defaultValue="./data/agent-communications") String root;
     @ConfigProperty(name="aies.execution.quality.timeout-seconds", defaultValue="90") int timeoutSeconds;
+    @ConfigProperty(name="aies.execution.documentation.workspace-root", defaultValue="./projects") String workspaceRoot;
     private MessageConsumer<JsonObject> consumer;
     @PostConstruct void start() {
         if (!enabled) return;
-        var gate = new ExecutionQualityGate(vertx, mapper, java.nio.file.Path.of(root), timeoutSeconds);
+        var gate = new ExecutionQualityGate(vertx, mapper, java.nio.file.Path.of(root), timeoutSeconds, java.nio.file.Path.of(workspaceRoot));
         consumer = vertx.eventBus().localConsumer(REVIEW, msg ->
             vertx.<JsonObject>executeBlocking(() -> gate.review(msg.body().getString("workflowId"),
                 msg.body().getString("taskId")), false)
