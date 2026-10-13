@@ -97,9 +97,17 @@ public final class ExecutionWorkerEngine {
                 .put("status","EVIDENCE_PENDING_VERIFICATION")
                 .put("artifactRecordId",recordId);
         } catch(Exception error) {
-            try(var store=handoff()) {store.fail(workflowId,work.taskId(),work.leaseToken(),true,maxAttempts);}
-            return new JsonObject().put("claimed",true).put("taskId",work.taskId())
-                .put("status","RETRY_PENDING").put("failureType",error.getClass().getSimpleName());
+            try (var store = handoff()) {
+                boolean updated = store.fail(workflowId, work.taskId(), work.leaseToken(), true, maxAttempts);
+                String durableStatus = store.list(workflowId).stream()
+                    .filter(w -> w.taskId().equals(work.taskId()))
+                    .findFirst().orElseThrow().status();
+                return new JsonObject().put("claimed", true).put("taskId", work.taskId())
+                    .put("status", updated
+                        ? ("DEAD".equals(durableStatus) ? "DEAD" : "RETRY_PENDING")
+                        : "RECONCILIATION_REQUIRED")
+                    .put("failureType", error.getClass().getSimpleName());
+            }
         }
     }
     private ExecutionHandoffStore handoff() throws Exception {
