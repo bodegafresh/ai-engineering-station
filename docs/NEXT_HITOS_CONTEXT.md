@@ -1,49 +1,46 @@
-# AIES — Estado del Hito B y continuidad
+# AIES — Continuidad después del Hito D
 
 ## Baseline
+`bodegafresh/ai-engineering-station`, `main` commit `5c64fc23727331df67b5eec7493fce876bb4e766`, consultado 2026-10-13. Java 21, Quarkus, Vert.x Event Bus, SQLite. P1.3 DAG, handoff; P1.4 durable claim/fail.
 
-Repositorio `bodegafresh/ai-engineering-station`, rama `main` consultada el 2026-10-13. Java 21, Quarkus 3.27.1, Vert.x Event Bus, Gradle, SQLite. P0.14–P0.17 intake/plan/auditoría; Hito A P1.1–P1.2 metodología y requisitos. No cambiar contratos existentes, ni asumir que auditoría equivale a ejecución.
+## Hito D entregado — worker explícito, sin autonomía implícita
 
-## Este paquete: P1.3 y segmento seguro de P1.4
+- `ExecutionWorkerEventBus.RUN_ONE`: `aies.execution.worker.run-one.v1`, opt-in, un intento por mensaje, sin REST nuevo.
+- `ExecutionWorkerEngine`: claim durable del handoff existente, consulta plan inmutable, manda tarea al Event Bus `aies.execution.specialist.execute.v1`, exige respuesta `{executed:true,content:"..."}`, crea artefacto real en `CommunicationStore`, y registra estado `EVIDENCE_PENDING` en SQLite. No inventa evidencias ni marca COMPLETED.
+- `ExecutionWorkerPolicy`: validación de respuestas, coherencia de asignación y timeout inferior al lease.
+- `ExecutionHandoffStore`: métodos aditivos `plan` y `stageEvidence`. No altera tablas ni contratos existentes.
+- Tests unitarios para validación de respuestas y límites del worker.
 
-- `ExecutionGraph`: orden topológico determinista; detecta ciclos, referencias ausentes, tareas sin especialista, duplicados y presupuesto excedido.
-- `ExecutionHandoffStore`: SQLite independiente `execution-handoff.sqlite`; importación idempotente; tareas `PENDING`, `LEASED`, `COMPLETED`; token y vencimiento de lease; reintentos acotados; evidencia obligatoria para completar; desbloqueo por dependencias.
-- `ExecutionHandoffResource`: endpoint operador para importar **solo** planes con auditoría aprobada (`READY_FOR_ASSIGNMENT` y audit ID); consulta de tareas. Habilitación separada, apagada por defecto.
-- Pruebas JUnit de DAG, persistencia entre aperturas, idempotencia, rechazo de tokens erróneos, dependencias, conflictos y ciclos.
+**Importante:** el Event Bus `aies.execution.specialist.execute.v1` es un puerto hacia un ejecutor especializado real. Este paquete NO registra un ejecutor de mentira ni llama a herramientas. Sin un adaptador real, el intento falla de forma acotada y reintenta. El worker NO es un E2E final. Los resultados no se consideran aprobados.
 
-**No se incluye ejecución automática de especialistas.** `claim` y `complete` son primitivas de persistencia internas sin exposición REST; deben ser consumidas por el futuro orquestador de ejecución por Vert.x Event Bus, con permisos y evidencia real. No afirmar que P1.4 está finalizado.
+## Brechas prioritarias, Hito E
 
-## Instalación y pruebas
+1. Implementar adaptador real al mecanismo de especialistas del proyecto, con validación de capacidades/herramientas, permisos, límites de tokens y timeouts. No usar `SpecialistEventBus.SELECT` como si ejecutara trabajo: solo selecciona.
+2. Hacer idempotente la recepción de resultados por `(workflowId,taskId,attemptId)`: outbox/inbox transaccional, reconciliación de artefactos si el proceso cae entre `append` y `stageEvidence`. Hoy puede quedar un artefacto huérfano en ese intervalo.
+3. `EvidenceVerifier`: verificar registro `ARTIFACT`, SHA-256, contenido, vínculo exacto workflow/task y procedencia. **No aceptar `artifact://...` por formato únicamente.**
+4. Auditar artefacto por `CommunicationEventBus.AUDIT_REQUEST`, aplicar rúbrica según metodología, controlar revisión/bloqueo, y solo entonces transición `EVIDENCE_PENDING -> COMPLETED` con verificación atómica de referencia de auditoría. Prohibir `complete` directo sin gate cuando se habilite producción.
+5. Propagar `DEAD` a tareas dependientes y definir estados finales de workflow. Añadir dead-letter para expiración de lease y retries.
+6. Añadir pruebas de integración de Event Bus, worker real y almacenamiento con reinicio, timeout, replay, auditoría negativa y ejecución sin permisos.
 
-Desde una rama limpia basada en main:
+## Hito F — E2E con entrega final
+
+- Entrega versionada agregando artefactos aprobados, evidencias y resultados de aceptación.
+- Escenario vertical pequeño: intake -> plan -> auditoría plan -> import -> especialista real -> artefacto -> verificación -> auditoría -> COMPLETE -> entrega final.
+- E2E con proceso real Quarkus + SQLite + Event Bus, fallos inyectados, concurrencia, timeout y recuperación; una prueba con modelo real local aparte de CI determinista.
+- Observabilidad: métricas por transición, latencia, reintentos, leases expirados, auditorías, costo estimado/real, correlación por workflow/task/attempt.
+
+## Riesgos conocidos
+
+- El puerto `EXECUTE` no está implementado por este paquete: ejecución depende de adaptador real posterior.
+- `EVIDENCE_PENDING` bloquea DAG hasta auditoría; es intencional.
+- Las operaciones sobre `execution-handoff.sqlite` y `communication.sqlite` no son atómicas entre sí.
+- El `claim` existente no implementa dead-letter automático de leases vencidos al llegar a maxAttempts; requiere reconciliador.
+- Una llamada al Event Bus que excede el lease puede generar efectos tardíos; cualquier adaptador debe ser idempotente.
+- Sin compilación y suite completa en Fedora, no afirmar validación E2E.
+
+## Comandos
 
 ```bash
-unzip aies-hito-b.zip -d /tmp
-bash /tmp/aies-hito-b/scripts/install.sh
-./gradlew :apps:control-plane:test --tests '*ExecutionGraphTest' --tests '*ExecutionHandoffStoreTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*ExecutionWorkerPolicyTest' --no-daemon --console=plain
 ./gradlew clean test --no-daemon --console=plain
 ```
-
-El instalador no sobreescribe Java existente. Agrega una propiedad a `application.properties`; verificar que no esté duplicada antes del merge. Ejecutar smoke de los endpoints existentes con configuración de seguridad real.
-
-## Próximos pasos, en orden
-
-1. **P1.4**: conectar el orquestador al Event Bus con comandos versionados `execution.claim`, `execution.complete`, `execution.fail`, autorización por capacidad y herramientas permitidas, bounded concurrency, idempotencia y outbox/inbox. Nunca ejecutar código, redes o despliegues por un simple `import`.
-2. **P1.4**: implementación de `fail` con clasificación recuperable/no recuperable, dead-letter y recuperación tras reinicio. Resolver tareas que agotan intentos y propagación de bloqueos a dependientes. No simular éxito con referencias de evidencia inventadas.
-3. **P1.5**: calidad específica por metodología; verificación de evidencia antes de `COMPLETED`; auditoría posterior a ejecución y gate de entrega. Conservar rubricas científicas solo para experimentos.
-4. **P1.6**: métricas, trazas correlacionadas, alertas de cola, auditoría y costo; tests E2E de reinicio, concurrencia multi-instancia, timeout, replay, caída entre escritura y publicación.
-5. **Requisitos v3**: extracción asistida por modelo con citas de fuentes verificables, contradicciones semánticas y revisión humana de incertidumbre; no reemplazar el intake determinista.
-
-## Riesgos pendientes
-
-- Importación entre `planning.sqlite` y `execution-handoff.sqlite` no es una transacción distribuida; el reintento idempotente reduce riesgo pero no lo elimina.
-- `complete` comprueba formato de referencia, **no existencia ni calidad de la evidencia**. Conectar `EvidenceVerifier` antes de habilitar consumidores.
-- El store usa una conexión sincronizada por instancia, no una cola transaccional multi-proceso; antes de multi-instancia implementar claim atómico y coordinación.
-- `claim` puede volver a arrendar tareas cuyo lease expiró, hasta el límite de intentos. Falta política de dead-letter y bloqueo explícito.
-- `PlanningEventBus` produce Markdown con secuencias literales `\\n`; corregir sin alterar payloads históricos.
-- Auditoría: verificar idempotencia al crear artifacts y manejo de errores/timeout.
-- `ExecutionGraph` usa `plan.estimatedCostUnits`; añadir verificación del total recalculado de tareas y coherencia con presupuesto antes de habilitar ejecución.
-
-## Criterios de salida del Hito B completo
-
-Pruebas verdes; solo planes auditados entran; cada tarea se asigna a un especialista autorizado; toda ejecución pasa por Event Bus; una tarea no corre antes de sus dependencias; los fallos no duplican efectos; evidencia verificable precede `COMPLETED`; reinicios no pierden trabajo; costo y concurrencia están limitados; se puede auditar cada decisión.

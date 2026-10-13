@@ -119,5 +119,26 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             return p.executeUpdate()==1;
         }
     }
+    /** Read the immutable imported plan for execution; no planning DB dependency. */
+    public synchronized PlanningContracts.Plan plan(String workflowId) throws Exception {
+        dev.aies.control.communication.CommunicationContracts.id(workflowId);
+        try (var p=db.prepareStatement("SELECT plan_json FROM execution_workflows WHERE workflow_id=?")) {
+            p.setString(1,workflowId);
+            try(var rs=p.executeQuery()) {
+                if(!rs.next())throw new IllegalArgumentException("Unknown workflow");
+                return mapper.readValue(rs.getString(1),PlanningContracts.Plan.class);
+            }
+        }
+    }
+    /** Persist actual artifact reference, but do not unlock DAG until quality approval. */
+    public synchronized boolean stageEvidence(String workflowId,String taskId,String token,String artifactRecordId) throws Exception {
+        dev.aies.control.communication.CommunicationContracts.id(workflowId);dev.aies.control.communication.CommunicationContracts.id(taskId);dev.aies.control.communication.CommunicationContracts.id(artifactRecordId);
+        if(token==null||token.isBlank())throw new IllegalArgumentException("Missing lease token");
+        try(var p=db.prepareStatement("UPDATE execution_tasks SET status='EVIDENCE_PENDING',evidence_ref=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>?")) {
+            p.setString(1,"artifact://communication/"+artifactRecordId);p.setString(2,java.time.Instant.now().toString());
+            p.setString(3,workflowId);p.setString(4,taskId);p.setString(5,token);p.setString(6,java.time.Instant.now().toString());
+            return p.executeUpdate()==1;
+        }
+    }
     @Override public void close() throws Exception {db.close();}
 }
