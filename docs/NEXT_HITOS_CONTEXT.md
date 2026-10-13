@@ -1,71 +1,54 @@
-# AIES — Continuidad tras F3.3 (handoff documental autorizado, incremento inicial)
+# AIES — F3.4 Recovery & Security: continuidad
 
-## Base y alcance
+## Base, compatibilidad y estado
 
-Base de implementación: `main` commit `a1d5a9e554fc010aaed684b1dcf5b3a5ad3e53bb` (PR #43). Este ZIP no sustituye módulos ni crea otro orquestador. Mantiene Java 21, Quarkus, SQLite, Vert.x Event Bus y los contratos de comunicación existentes.
+Base verificada por GitHub: `main` commit `9936c64ccbacc6c1e2e19b7cbf95b796c7b25d16` (PR #44). Este paquete es **un incremento F3.4, no el cierre de todas las garantías**. Mantiene Java 21, Quarkus, Vert.x local Event Bus, SQLite, `ExecutionWorkerEngine`, `ExecutionHandoffStore`, `WorkspaceDocumentationService`, y `ExecutionQualityGate`. No agrega frameworks, workers paralelos, REST interno ni Python al runtime.
 
-**Estado:** F3.3 **parcial**. No declarar recuperación completa, E2E ni seguridad multitenant. Las pruebas deben ejecutarse en Fedora antes de merge.
+## Implementado
 
-## Cambios
+1. **Autorización en consumidor:** `WorkspaceDocumentationService.generate` ya no confía en `approved=true`; requiere registro inmutable de autorización en SQLite y lease `LEASED` vigente para el `attemptId`, además del SHA-256 de la fuente. Una invocación directa por Event Bus sin esas condiciones falla antes de invocar al LLM.
+2. **Fencing en puntos de efecto:** se revalida el lease antes del modelo, antes de escribir, y al registrar cada fase. Un token obsoleto no puede confirmar fases en SQLite. No se afirma aislamiento absoluto del filesystem ante carreras TOCTOU.
+3. **Journal aditivo por intento:** tabla `execution_attempt_effects` con `(workflow_id, task_id, attempt_id)`, fases `PREPARED`, `FILE_WRITTEN`, `ARTIFACT_RECORDED`, archivo y hash. Se mantiene una única base SQLite de ejecución.
+4. **Reconciliación acotada:** si el mismo intento activo tiene `FILE_WRITTEN` y el archivo coincide con su ruta/hash, se recupera el artefacto sin volver a llamar al modelo. Si está `ARTIFACT_RECORDED`, se verifica archivo y artefacto y se devuelve el mismo resultado. Archivos sin journal o alterados se rechazan, no se borran.
+5. **Tests:** rechazo de ejecución sin grant/lease, correlación de autorización, fencing después de `fail`, journal durable tras reabrir SQLite.
 
-1. `ExecutionCapabilityAuthorization`: registro inmutable de autorización documental con `workflowId`, `taskId`, capacidad, ruta Java relativa y SHA-256 del fuente.
-2. `ExecutionHandoffStore`: tabla SQLite aditiva `execution_capability_authorizations`; autorización idempotente, conflicto fail-closed y consulta durable. La autorización solo se permite cuando la tarea está `PENDING` y asignada a `software-engineer`.
-3. `ExecutionHandoffResource`: endpoint REST de operador `POST /api/v1/execution/workflows/{id}/tasks/{taskId}/authorize-documentation`, protegido por `WorkspaceOperatorAuthorizer` y los flags existentes. Body: `{"sourcePath":"src/main/java/example/A.java","sourceSha256":"<64 hex>"}`. No acepta `approved` desde el cliente.
-4. `ExecutionWorkerEngine`: si existe autorización documental persistida, utiliza el consumidor `WorkspaceDocumentationEventBus.GENERATE` y su servicio existente; correlaciona workflow/task/attempt, verifica el registro canónico y **no crea un segundo artefacto**. Deja la tarea `EVIDENCE_PENDING` para el Quality Gate. Sin autorización, conserva el camino de ejecución preexistente por compatibilidad.
-5. `WorkspaceDocumentationService`: compara el hash del archivo fuente con el hash aprobado antes de inferencia. Mantiene la verificación material F3.2.
-6. Tests unitarios de contrato de autorización.
+## Limitaciones abiertas que impiden declarar E2E resiliente
 
-## Configuración / flujo opt-in
+- **Ventana entre append en `communication.sqlite` y registro `ARTIFACT_RECORDED` en `execution-handoff.sqlite`:** un crash puede producir un artefacto duplicado en el reintento. Solución siguiente: clave idempotente única `(workflowId,taskId,attemptId,kind)` en el store canónico, o outbox con deduplicación transaccional en destino. No basta con `INSERT OR IGNORE` en el journal.
+- **Carreras de filesystem:** validaciones `toRealPath` y symlinks no eliminan TOCTOU; aislar workspace, usar snapshot de fuente y staging por intento. La escritura actual del archivo precede la validación final del lease; si vence en medio del I/O, puede quedar un archivo huérfano, aunque no se aprueba.
+- **Concurrencia del mismo intento:** dos solicitudes idénticas simultáneas pueden invocar el modelo; falta exclusión/claim de fase con CAS y límites por workspace. `executeBlocking(...,false)` evita bloquear event loop, pero no garantiza serialización global.
+- **Calidad y auditoría:** `ExecutionHandoffStore.approveEvidence` aún confía en el caller. Restringir a una frontera de aprobación que verifique audit record y evidencia material; no exponer aprobación directa a otros consumidores.
+- **Reintentos entre leases:** una vez expirado el intento anterior, el siguiente puede producir otro documento con otro `attemptId`. Debe decidirse semántica de compensación/no borrado y auditoría de artefactos huérfanos.
+- **Modelo externo:** faltan pruebas HTTP Ollama simulado y reales, reinicio de Quarkus, fallos inyectados en cada fase y pruebas de concurrencia. No se afirma E2E validado.
 
-Requiere los flags existentes `aies.execution.handoff.enabled`, `aies.planning.enabled`, `aies.execution.worker.enabled`, `aies.execution.documentation.enabled`. Se recomienda un timeout de worker mayor al de documentación y un lease superior al timeout del worker, respetando las validaciones existentes. No habilitar en un workspace no confiable.
+## F3.5 — Cierre de idempotencia y calidad (P0, antes de F4)
 
-1. Importar plan previamente auditado vía REST existente.
-2. Calcular SHA-256 de un fuente Java del workspace configurado y registrar autorización por endpoint autenticado.
-3. Ejecutar `ExecutionWorkerEventBus.RUN_ONE` con el workflow; el worker reclama el intento durable y despacha el documentador mediante Event Bus.
-4. El documentador genera archivo + artefacto; el worker verifica correlación y registra `EVIDENCE_PENDING`.
-5. Invocar `ExecutionQualityEventBus.REVIEW` por el flujo de revisión existente. **No confundir evidencia pendiente con tarea aprobada.**
+1. Revisar `CommunicationStore` e incorporar operación `appendIdempotent` con clave única y validación de payload conflictivo. Mantener compatibilidad con registros previos.
+2. Crear journal/outbox con transiciones CAS y correlación; cubrir crash antes/después de archivo, artefacto, staging, auditoría y `COMPLETED`.
+3. Crear snapshot de fuente autorizada; escritura temporal aislada con comprobación de lease justo antes de publicación y reconciliación explícita. No borrar artefactos de otros intentos.
+4. Endurecer aprobación: verificar en una única frontera lógica la propiedad de `workflowId/taskId`, `audit.subjectId`, decisión, hash material y transición; registrar intento/audit ID en entrega.
+5. Test de dos invocaciones concurrentes, stale attempt, recuperación tras reinicio, hash alterado, duplicación de mensaje y timeout de modelo; asegurar que ninguna tarea `COMPLETED` carece de auditoría real.
 
-## Riesgos y limitaciones abiertos (bloqueantes antes de E2E productivo)
+## F4 — Primer E2E con entrega final
 
-- **Autorización del bus:** `WorkspaceDocumentationEventBus.GENERATE` sigue aceptando `approved=true` como entrada interna. El endpoint REST es autenticado, pero no hay aislamiento/autenticación por consumidor en el Event Bus local. Migrar el consumidor a verificar autorización persistida por `workflowId/taskId/attemptId` y prohibir la invocación independiente no autorizada antes de uso no confiable.
-- **No existe journal de efectos idempotente:** caída después de escribir el archivo pero antes de insertar el artefacto deja un archivo huérfano; reintento puede fallar con `FileAlreadyExistsException`. Implementar estados PREPARED/FILE_WRITTEN/ARTIFACT_RECORDED/STAGED, claves por intento y reconciliación. No borrar archivos huérfanos automáticamente.
-- **No es fencing completo:** se verifica token al hacer `stageEvidence`, pero el LLM y el filesystem pueden haber producido efectos antes de detectar lease vencido. Validar lease antes de ejecutar y antes de publicar; usar escritura a staging y commit por token.
-- **Auditoría no transaccional:** `approveEvidence()` sigue confiando en llamadores. Debe comprobar evidencia y auditoría dentro de una única frontera de aprobación; SQLite separadas requieren protocolo de reconciliación.
-- **Rutas:** SHA-256 del fuente detecta cambios, pero hay carreras TOCTOU y posibles symlinks intermedios; endurecer con workspace aislado, `SecureDirectoryStream` donde sea viable y snapshots inmutables.
-- **Compatibilidad:** tareas no autorizadas siguen ruta genérica existente. La autorización documental se limita a `software-engineer`/`software`; ampliar con registry de capacidades existentes y permisos por tarea, no con múltiples workers.
-- **No se ejecutó Ollama real ni E2E:** los tests del paquete son unitarios. Las pruebas reales deben comprobar archivos, contenido, auditoría, DAG y reinicio.
+- Solicitud -> requisitos -> plan auditado -> DAG -> autorización -> Event Bus -> documentador Ollama -> Markdown -> evidencia SHA-256 -> auditoría -> `COMPLETED` -> manifiesto final durable.
+- Incluir dos tareas con dependencia; no desbloquear segunda si primera queda `EVIDENCE_PENDING` o audit rechaza.
+- Manifest con workflow, task, attempt, artifact id, ruta, hash, audit id, decisión, fecha, estado y limitaciones. No inventar éxito ni evidencias.
+- Tests E2E con modelo HTTP simulado para CI; prueba manual con Ollama real, workspace temporal y configuración opt-in.
 
-## Siguiente incremento obligatorio: F3.4 — Journal + fencing + control del Event Bus
+## F5 / F6
 
-P0:
-- Consumidor documental debe recuperar y verificar autorización persistida; eliminar confianza en booleanos externos.
-- Tabla de intentos/efectos durable con clave `(workflowId,taskId,attemptId)` y fases idempotentes.
-- Reconciliar archivo generado, artifact append, stage evidence y auditoría tras reinicio; rechazar duplicados y stale attempts.
-- Revisión de lease y fencing antes y después de I/O, no solo al stage.
-- Pruebas con HTTP Ollama simulado, SQLite temporal, caídas en cada fase y duplicados concurrentes.
-- Migrar `approveEvidence()` para validar la auditoría y materialidad sin permitir bypass.
+- **F5:** integrar herramientas de ingeniería existentes (patch y verificación Docker) bajo capacidades aprobadas, límites y evidencia; no comandos arbitrarios ni ejecución financiera real.
+- **F6:** métricas, trazas, límites de concurrencia y recursos, backpressure, recuperación, seguridad y pruebas de carga. Evaluar Gradle 9 y eliminar usos de API `complete()` obsoleta.
+- Aprendizajes del especialista técnico deben ser cambios versionados y testeados en `TechnicalSpecialistGuidance`, nunca autoadaptación de políticas por el LLM.
 
-**Aceptación:** recuperación de caída entre filesystem y SQLite sin duplicados ni aprobación falsa; invocación documental no autorizada rechazada en el propio consumidor; ninguna tarea `COMPLETED` sin auditoría verificable.
-
-## F4 — Primer E2E final
-
-- Ingesta/requisitos/plan auditado -> autorización -> DAG -> agente -> Markdown real -> hash -> audit -> `COMPLETED` -> manifiesto durable de entrega.
-- Pruebas de dos tareas con dependencia, auditoría rechazada, reinicio, pérdida de red del modelo, cambio de fuente y salida del workspace.
-- Manifiesto con workflow, requisito, task, attempt, artifact id, ruta, SHA-256, audit record id, decisión, fechas y limitaciones. No inventar evidencias.
-
-## F5 — Agente de ingeniería; F6 — Operación
-
-- F5: adaptar herramientas de workspace/patch y verificación Docker ya presentes; aprobación antes de aplicar, límites de comandos y logs verificables.
-- F6: métricas, tracing, backpressure, timeouts, pool de conexiones, límites de concurrencia y de recursos, pruebas de carga y seguridad.
-- Aprendizajes verificados se agregan a `TechnicalSpecialistGuidance` mediante cambios versionados y tests, nunca auto-modificación de políticas por el LLM.
-
-## Validación
+## Ejecución y aceptación
 
 ```bash
-./gradlew :apps:control-plane:test --tests '*ExecutionCapabilityAuthorizationTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*ExecutionRecoverySecurityTest' --no-daemon --console=plain
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 git status --short
 ```
 
-No ejecutar operaciones SQLite, HTTP bloqueante ni `CompletableFuture.get()` directamente en el event loop. Los consumidores existentes emplean `vertx.executeBlocking(..., false)`; preservar ese patrón. Revisar la futura transición a `Future` composables y worker pools acotados, sin crear pools por solicitud.
+El Event Bus debe seguir usando `localConsumer` y `vertx.executeBlocking(..., false)` para SQLite, HTTP bloqueante y filesystem; jamás bloquear event loops. El journal SQLite es fuente de verdad y no se sustituye por mensajes volátiles. Este incremento no habilita automáticamente las capacidades en `application.properties`.
