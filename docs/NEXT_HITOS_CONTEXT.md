@@ -398,3 +398,31 @@ git diff --check
 - The source digest in intake is format-validated, **not** independently verified against external source bytes; no new claim of content integrity is made.
 - Source references alone do not guarantee the semantic auditor will approve. An immutable revision and audit are still required.
 - These tests are supplied but Gradle/Quarkus/Ollama execution is not claimed by the ZIP producer.
+
+## F4.3-G10-B — Contract-aware structural planning audit (local validation pending)
+### Implementation
+- `PlanningArtifactQualityPolicy`: deterministic fail-closed parsing of the canonical JSON embedded in `planning-plan` markdown; no model, shell, external network, or project writes.
+- Verifies workflow correlation, audit-ready state, one-to-one requirement/task mapping, assignment, acceptance criteria, dependency projection, per-task costs, total and budget, and a minimum count of unique provenance URI references.
+- `CommunicationQualityPolicy` delegates only `planning-plan` to this policy; other artifact/message behavior remains unchanged. `CommunicationEventBus` continues its existing Event Bus path, durable audit and optional semantic stage. A structural pass does not imply semantic approval.
+- Regression tests: valid planning contract; missing provenance; mutated task criteria; cost inconsistency; invalid JSON.
+### Important limitations
+- Existing planning artifacts lack an immutable source-ID-to-URI-to-digest map. URI count alone cannot prove exact source mapping or verify bytes/digest. **G10-C must add and verify this mapping without changing existing historical records**; never claim full provenance or digest verification from G10-B.
+- Legacy rejected workflows remain immutable; create a new intake/workflow for observed approval.
+- No Gradle/Quarkus/Ollama execution is claimed by the package author. No actual model identity or latency measured.
+- `F4` remains **OPEN**; do not advance to F5 based solely on deterministic policy tests.
+### Required local validation
+```bash
+./gradlew :apps:control-plane:test --tests '*PlanningArtifactQualityPolicyTest' --tests '*PlanningRestIntegrationTest' --tests '*PlanningArtifactEvidenceTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+### G10-C next — Complete provenance and audit integrity
+1. Persist canonical source ID, URI and SHA-256 digest mapping inside immutable planning evidence, with exact requirement/task joins; verify digest against bytes when source material is available. Missing bytes must not be misreported as verified.
+2. Separate structural findings (machine-checkable) from semantic model findings; preserve the model identity and exact decision, no invented audit approval.
+3. Add negative tests: mismatched source ID/URI, changed digest, duplicate sources, invalid DAG, budget, missing criteria, corrupted artifact SHA, stale audit replay.
+4. Re-run real intake→audit with a new workflow, retain both APPROVED and REVISION_REQUIRED immutable histories.
+5. Continue G9 restart, execution/material SHA, 429, timeout/late reply, lease fencing and observability certification before F4 closure.
+### Lessons
+- A source URI list is not equivalent to a cryptographically verifiable provenance graph.
+- Generic markdown-quality heuristics cannot replace contract-specific checks; fail closed on missing/corrupted canonical data.
+- Test-local structural APPROVED is not evidence of real semantic Ollama APPROVED.
