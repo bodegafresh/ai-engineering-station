@@ -47,6 +47,8 @@ public final class OllamaSpecialistExecutor {
         String output = result.path("response").asText("").trim();
         if (output.isEmpty() || output.length() > 262144) throw new IllegalStateException("Empty or oversized model output");
         return new JsonObject().put("executed", true).put("content", output)
+            .put("workflowId", request.getString("workflowId"))
+            .put("taskId", request.getString("taskId"))
             .put("attemptId", request.getString("attemptId"))
             .put("executionType", "local-model-inference")
             .put("verification", "UNVERIFIED_MODEL_OUTPUT");
