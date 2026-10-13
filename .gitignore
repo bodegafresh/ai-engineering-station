@@ -44,3 +44,4 @@ __pycache__/
 # P0.4: durable local communication records
 /data/agent-communications/
 /apps/control-plane/data/agent-communications/
+.local-certifications/
