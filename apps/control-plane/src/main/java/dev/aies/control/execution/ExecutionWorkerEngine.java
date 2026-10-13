@@ -86,7 +86,7 @@ public final class ExecutionWorkerEngine {
                 "execution-result","text/markdown",content,List.of()));
             String recordId;
             try(var comm=new CommunicationStore(root.resolve("communication.sqlite"),mapper)) {
-                recordId=comm.append("ARTIFACT",workflowId,work.taskId(),artifact).id();
+                recordId=comm.appendIdempotent("execution-"+work.leaseToken()+"-artifact", "ARTIFACT",workflowId,work.taskId(),artifact).id();
             }
             try(var store=handoff()) {
                 if(!store.stageEvidence(workflowId,work.taskId(),work.leaseToken(),recordId))

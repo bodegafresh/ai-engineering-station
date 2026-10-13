@@ -26,6 +26,10 @@ public final class CommunicationStore implements AutoCloseable {
                 "kind TEXT NOT NULL,schema_version TEXT NOT NULL,sha256 TEXT NOT NULL,"+
                 "payload_json TEXT NOT NULL,created_at TEXT NOT NULL)");
             s.execute("CREATE INDEX IF NOT EXISTS communication_workflow_idx ON communication_records(workflow_id,created_at,id)");
+            // Unique, durable key owned by the destination database. Legacy append() remains unchanged.
+            s.execute("CREATE TABLE IF NOT EXISTS communication_idempotency("+
+                "operation_key TEXT PRIMARY KEY,record_id TEXT NOT NULL UNIQUE,"+
+                "FOREIGN KEY(record_id) REFERENCES communication_records(id))");
         }
     }
     public synchronized StoredRecord append(String kind, String workflowId, String taskId, Object payload) throws Exception {
@@ -42,6 +46,48 @@ public final class CommunicationStore implements AutoCloseable {
             ps.executeUpdate();
         }
         return new StoredRecord(id,workflowId,taskId,kind,CommunicationContracts.VERSION,sha,now,payload);
+    }
+    /** One record per logical operation. Conflicting replays are rejected, never silently accepted. */
+    public synchronized StoredRecord appendIdempotent(String operationKey, String kind,
+                                                       String workflowId, String taskId, Object payload) throws Exception {
+        CommunicationContracts.id(operationKey);
+        CommunicationContracts.id(workflowId);
+        CommunicationContracts.id(taskId);
+        if (!Set.of("MESSAGE", "ARTIFACT", "AUDIT").contains(kind))
+            throw new IllegalArgumentException("Invalid record kind");
+        String json = mapper.writeValueAsString(payload);
+        String sha = sha256(json);
+        db.setAutoCommit(false);
+        try {
+            // BEGIN DEFERRED is sufficient with the unique constraint; concurrent writers serialize in SQLite.
+            try (var p = db.prepareStatement("SELECT r.* FROM communication_idempotency i "+
+                    "JOIN communication_records r ON r.id=i.record_id WHERE i.operation_key=?")) {
+                p.setString(1, operationKey);
+                try (var rs = p.executeQuery()) {
+                    if (rs.next()) {
+                        if (!kind.equals(rs.getString("kind")) || !workflowId.equals(rs.getString("workflow_id"))
+                                || !taskId.equals(rs.getString("task_id")) || !sha.equals(rs.getString("sha256")))
+                            throw new SecurityException("Conflicting idempotent operation");
+                        var existing = read(rs);
+                        db.commit();
+                        return existing;
+                    }
+                }
+            }
+            String id = UUID.randomUUID().toString();
+            String now = Instant.now().toString();
+            try (var p = db.prepareStatement("INSERT INTO communication_records VALUES(?,?,?,?,?,?,?,?)")) {
+                p.setString(1,id);p.setString(2,workflowId);p.setString(3,taskId);
+                p.setString(4,kind);p.setString(5,CommunicationContracts.VERSION);
+                p.setString(6,sha);p.setString(7,json);p.setString(8,now);p.executeUpdate();
+            }
+            try (var p = db.prepareStatement("INSERT INTO communication_idempotency(operation_key,record_id) VALUES(?,?)")) {
+                p.setString(1,operationKey);p.setString(2,id);p.executeUpdate();
+            }
+            db.commit();
+            return new StoredRecord(id,workflowId,taskId,kind,CommunicationContracts.VERSION,sha,now,payload);
+        } catch (Exception e) {db.rollback();throw e;}
+        finally {db.setAutoCommit(true);}
     }
     public synchronized List<StoredRecord> list(String workflowId) throws Exception {
         CommunicationContracts.id(workflowId);
