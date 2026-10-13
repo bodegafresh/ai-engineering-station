@@ -64,6 +64,22 @@ public final class WorkspaceDocumentationService {
         Path expectedOutput=root.resolve(".aies/generated-docs/").resolve(workflowId+"-"+taskId+"-"+attemptId+".md");
         if(Files.exists(expectedOutput,LinkOption.NOFOLLOW_LINKS))
             return recoverWritten(workflowId,taskId,attemptId,sourcePath,sourceSha,expectedOutput);
+        Path staged=expectedOutput.resolveSibling(expectedOutput.getFileName().toString()+".staging");
+        if(Files.exists(staged,LinkOption.NOFOLLOW_LINKS)) {
+            if(Files.isSymbolicLink(staged) || !Files.isRegularFile(staged,LinkOption.NOFOLLOW_LINKS))
+                throw new SecurityException("Unsafe staging file");
+            try(var store=handoff()) {
+                var effect=store.effect(workflowId,taskId,attemptId).orElseThrow(
+                    () -> new SecurityException("Unjournaled staging file"));
+                if(!"FILE_WRITTEN".equals(effect.phase()) ||
+                    !root.relativize(expectedOutput).toString().equals(effect.documentPath()) ||
+                    !sha256(Files.readAllBytes(staged)).equals(effect.documentSha256()))
+                    throw new SecurityException("Staging hash or journal mismatch");
+                store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);
+            }
+            Files.move(staged,expectedOutput,StandardCopyOption.ATOMIC_MOVE);
+            return recoverWritten(workflowId,taskId,attemptId,sourcePath,sourceSha,expectedOutput);
+        }
         String objective = "Document this Java source faithfully as Markdown. Include responsibilities, public API and limitations. " +
             "Do not invent tests or execution results. Source SHA-256: " + sourceSha + "\n" + TechnicalSpecialistGuidance.documentation() + "\n" + javaSource;
         if (objective.length() > 4096) throw new IllegalArgumentException("Source exceeds model prompt budget");
@@ -93,13 +109,19 @@ public final class WorkspaceDocumentationService {
         Files.createDirectories(docs);
         Path output = docs.resolve(workflowId + "-" + taskId + "-" + attemptId + ".md");
         if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) throw new FileAlreadyExistsException(output.toString());
-        Path temp = Files.createTempFile(docs, ".aies-doc-", ".tmp");
-        try {
-            Files.writeString(temp, markdown, StandardCharsets.UTF_8);
-            Files.move(temp, output, StandardCopyOption.ATOMIC_MOVE);
-        } finally { Files.deleteIfExists(temp); }
-        String documentSha = sha256(Files.readAllBytes(output));
-        try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"FILE_WRITTEN",null,root.relativize(output).toString(),documentSha);}
+        // Journal the material hash before atomic publication; a staged file is
+        // recoverable only if its digest matches the durable journal.
+        Path staging = docs.resolve(output.getFileName().toString() + ".staging");
+        if (Files.exists(staging, LinkOption.NOFOLLOW_LINKS))
+            throw new SecurityException("Unjournaled or conflicting staging file");
+        String documentSha = sha256(markdown.getBytes(StandardCharsets.UTF_8));
+        Files.writeString(staging, markdown, StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        try(var store=handoff()) {
+            store.recordEffect(workflowId,taskId,attemptId,"FILE_WRITTEN",null,
+                root.relativize(output).toString(),documentSha);
+        }
+        Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
         var artifact = CommunicationContracts.validate(new CommunicationContracts.Artifact(
             CommunicationContracts.VERSION, workflowId, taskId, "software-engineer", "execution-result", "text/markdown",
             markdown, java.util.List.of(WorkspaceMaterialEvidence.reference(root.relativize(output).toString(), documentSha))));

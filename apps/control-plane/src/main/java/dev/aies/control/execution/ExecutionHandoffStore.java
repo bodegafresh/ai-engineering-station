@@ -170,6 +170,15 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             return p.executeUpdate()==1;
         }
     }
+    /** Read-only diagnosis: never automatically repeats an ambiguous model call. */
+    public synchronized String invocationRecoveryStatus(String workflowId,String taskId,String attemptId) throws Exception {
+        var state = effect(workflowId,taskId,attemptId);
+        if(state.isPresent() && "ARTIFACT_RECORDED".equals(state.get().phase())) return "RECORDED";
+        if(state.isPresent() && "FILE_WRITTEN".equals(state.get().phase())) return "FILE_RECOVERY_REQUIRED";
+        if(modelInvocationReserved(workflowId,taskId,attemptId)) return "AMBIGUOUS_INVOCATION";
+        if(state.isPresent()) return "PREPARED_NOT_INVOKED";
+        return "NOT_PREPARED";
+    }
     public synchronized boolean modelInvocationReserved(String workflowId,String taskId,String attemptId) throws Exception {
         try(var p=db.prepareStatement("SELECT 1 FROM execution_model_invocations WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
             p.setString(1,workflowId);p.setString(2,taskId);p.setString(3,attemptId);
