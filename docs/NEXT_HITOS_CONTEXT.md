@@ -327,3 +327,15 @@ bash -n scripts/f43g6-intake-certification.sh
 ./gradlew clean test --no-daemon --console=plain
 git diff --check
 ```
+
+## F4.3-G7 — Fail-closed planning audit verification at execution import (local validation pending)
+- Hardened `ExecutionHandoffResource.importAudited`: before importing a plan, reopen the immutable communication store and verify the exact planning artifact and APPROVED audit subject/workflow/task correlation. A planning status string and non-null audit ID are no longer sufficient.
+- `ExecutionPlanAuditVerifier` is a pure policy boundary over durable records; no model call, automatic grant, project write, or event-loop JDBC. All file and database work stays within existing `@Blocking` REST.
+- `ExecutionPlanAuditVerifierTest` covers BLOCKED audit, APPROVED audit with wrong subject, missing audit and durable reopen with correct APPROVED audit.
+- Remaining F4 certification work: actual Quarkus/Ollama operator E2E results, material tamper, lease/crash recovery, 429, concurrency and event-loop metrics. Do not declare F4 closed.
+### Validate
+```bash
+./gradlew :apps:control-plane:test --tests '*ExecutionPlanAuditVerifierTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
