@@ -165,3 +165,27 @@ AIES_SMOKE_WORKFLOW_ID=<id-existente> bash scripts/f43d-smoke.sh
 
 ### Aprendizaje F4.3-D
 La aceptación material es una inspección puntual de bytes; exponerla no convierte un test unitario en ejecución real. Reutilizar la política existente y proteger la frontera REST evita divergencias y privilegios adicionales.
+
+## F4.3-E — Corrección de correlación y smoke de modelo real (validación local pendiente)
+- Corregida la respuesta de `OllamaSpecialistExecutor`: conserva `workflowId`, `taskId`, `attemptId` exigidos por `ExecutionWorkerEngine`. Antes el adaptador devolvía solo `attemptId`, haciendo fallar la correlación de toda respuesta real.
+- Test de integración con HTTP local determinista + Vert.x Event Bus + SQLite: comprueba staging durable y que no se marca `COMPLETED` sin auditoría. **El servidor HTTP de este test NO es Ollama.**
+- Smoke opt-in `F43EOllamaLiveTest` con Ollama local real: solo habilitado por `AIES_F43E_LIVE=true`; mide latencia observada y valida staging de evidencia. No fabrica auditoría ni afirma aceptación final.
+- No hay grants de escritura, herramientas, shell ni aprobación implícita. No se alteran los contratos de Event Bus ni el flujo de auditoría.
+
+### Validación obligatoria
+```bash
+./gradlew :apps:control-plane:test --tests '*F43ERealSpecialistIntegrationTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+bash scripts/f43e-live.sh # Ollama instalado, modelo descargado; opt-in real
+```
+
+### Riesgos y siguiente paso antes de cerrar F4
+1. El smoke real verifica **inferencia y staging**, no intake HTTP → aprobación humana → auditoría semántica real → material SHA-256 → aceptación. No etiquetar como E2E completo.
+2. Completar harness de aceptación operator-approved sobre APIs reales y `ExecutionQualityGate` sin fabricar decisiones de auditoría; registrar modelo, tiempos, correlaciones, audit IDs y SHA-256.
+3. Reconciliar timeout ambiguo de inferencia y prevenir duplicados de invocaciones externas; actualmente el worker puede reintentar la inferencia de texto tras un timeout.
+4. Asegurar límite de concurrencia y backpressure en `RealSpecialistEventBus`, con prueba de saturación del worker pool.
+5. Verificar lease fencing, respuestas tardías, rechazo de auditoría, alteración material y reapertura SQLite en el camino real.
+6. Solo tras esas pruebas cerrar F4.3 y avanzar a F5; mantener F6 para observabilidad y endurecimiento.
+
+### Aprendizaje F4.3-E
+Un adaptador real debe respetar exactamente el contrato de correlación del worker. Los mocks pueden ocultar un campo omitido. Mantener pruebas de contrato cruzadas adapter→Event Bus→worker y diferenciar evidencia de inferencia de evidencia auditada.
