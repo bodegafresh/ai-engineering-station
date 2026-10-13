@@ -23,6 +23,7 @@ public final class PlanningArtifactQualityPolicy {
             plan = MAPPER.readTree(artifact.content().substring(a + begin.length(), b).trim());
         } catch (Exception e) { return List.of("Invalid canonical plan JSON"); }
         if (plan == null || !plan.isObject()) return List.of("Canonical plan must be an object");
+        issues.addAll(dev.aies.control.planning.PlanningProvenance.findings(artifact,plan));
         if (!artifact.workflowId().equals(text(plan, "workflowId"))) issues.add("Workflow correlation mismatch");
         if (!"AUDIT_REQUIRED".equals(text(plan, "status"))) issues.add("Plan is not audit-ready");
         JsonNode reqs = plan.path("requirements"), tasks = plan.path("tasks");
