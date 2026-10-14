@@ -690,3 +690,10 @@ git diff --check
 - Reconciliación de revocación con intentos en vuelo, idempotencia, concurrencia multiproceso, pruebas negativas y compatibilidad sin alterar v1.
 - Posteriormente S1-C: selección por registro v2 y puente v1 opt-in, sin fallback silencioso ante corrupción o indisponibilidad.
 - **F4/G10-K continúa pendiente; no afirmar certificación de Quarkus/Ollama ni cierre de F4.**
+
+## S1-C.1 — Verificación de continuidad de gobernanza (validación local pendiente)
+- `SpecialistGovernanceIntegrity` verifica la consistencia de estados/revisiones y el historial de decisiones de S1-B; detecta decisiones faltantes, huérfanas, transiciones incompatibles y divergencias de estado.
+- Tests SQLite con alteraciones intencionales. Verificación aislada, no integrada en selección ni REST; no equivale a auditoría criptográficamente inmutable.
+- No habilitar v2 ni crear permisos por un token compartido: `WorkspaceOperatorAuthorizer` autentica un secreto, no identidades individuales con scopes.
+- Siguiente incremento: S1-C.2, snapshot consistente con escritores, integridad de auditoría anclada, autenticación real de operador, separación de funciones y pruebas multiproceso; luego selector v2 opt-in con rollback.
+- F4/G10-K sigue OPEN. No se ejecutó Gradle ni Ollama durante la generación del paquete; validar localmente.
