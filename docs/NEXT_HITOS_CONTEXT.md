@@ -728,3 +728,14 @@ git diff --check
 - Ejecutar `./gradlew clean test --no-daemon --console=plain` y `git diff --check`.
 - Registrar resultados reales antes de PR; no afirmar pruebas ejecutadas durante generación del ZIP.
 - Siguiente S1-C.3-C: idempotencia durable de comandos con fingerprint actor/acción/revisión/hash, concurrencia multiproceso, snapshot consistente y recuperación con inyección de fallos.
+
+## S1-C.3-C1 — Snapshot consistente de integridad SQLite (pendiente de validación local)
+
+- Se añade `SpecialistGovernanceSnapshot` como verificador **read-only** de correspondencia entre decisiones, outbox y baseline histórico.
+- Una única conexión y transacción de lectura proporcionan un snapshot SQLite consistente; las verificaciones anteriores de `SpecialistGovernanceOutbox.verify()` usaban dos conexiones y podían observar commits diferentes.
+- Detección de eventos faltantes, huérfanos, campos divergentes y baseline huérfano; conteo de eventos nuevos excluyendo el baseline. La ausencia de esquema falla cerrado.
+- Pruebas JUnit sobre SQLite para faltantes, baseline y registros huérfanos.
+- **No se sustituye todavía el verificador existente ni se integra automáticamente con el gateway.** La verificación de cadena de estados S1-C.1 sigue siendo una obligación independiente.
+- Pendiente S1-C.3-C2: idempotencia durable dentro de la transacción de `SpecialistGovernanceService`, prueba de concurrencia multiproceso, crash injection y recuperación. No se debe presentar S1-C.3-C como cerrado.
+- Sin endpoints, ejecución automática, publicación del outbox ni selector v2. Event Bus v1 intacto. F4/G10-K continúa OPEN.
+- Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceSnapshotTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
