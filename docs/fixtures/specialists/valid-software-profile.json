@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "2.0", "kind": "SpecialistProfile", "id": "engineering.software.architect", "version": "1.0.0",
+  "displayName": "Analista de arquitectura de software", "discipline": "engineering.software",
+  "specializations": ["distributed-systems"],
+  "competencies": [{"capabilityId": "engineering.software.architecture", "capabilityVersion": "1.0.0", "requiredProficiency": "ADVANCED"}],
+  "roles": ["ANALYST"], "jurisdictions": [], "methodologyRefs": [], "outputContractRefs": [], "requiredTools": [],
+  "governanceRef": "governance.general@1.0.0", "maxConcurrent": 1, "costUnits": 3
+}

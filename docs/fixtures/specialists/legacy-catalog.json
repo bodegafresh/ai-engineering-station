@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "source": "main:SpecialistEventBus.java",
+  "specialists": [
+    {"id": "researcher", "capabilities": ["research"], "tools": [], "maxConcurrent": 2, "costUnits": 1},
+    {"id": "requirements-auditor", "capabilities": ["requirements", "audit"], "tools": [], "maxConcurrent": 1, "costUnits": 2},
+    {"id": "software-engineer", "capabilities": ["software", "implementation"], "tools": [], "maxConcurrent": 1, "costUnits": 3},
+    {"id": "experiment-analyst", "capabilities": ["statistics", "experiments"], "tools": [], "maxConcurrent": 1, "costUnits": 2}
+  ]
+}

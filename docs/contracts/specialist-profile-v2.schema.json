@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aies.local/contracts/specialist-profile-v2.schema.json",
+  "title": "AIES SpecialistProfile S0 proposal (not an executable grant)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "id", "version", "displayName", "discipline", "competencies", "roles", "requiredTools", "maxConcurrent", "costUnits"],
+  "properties": {
+    "schemaVersion": {"const": "2.0"},
+    "kind": {"const": "SpecialistProfile"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,127}$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "displayName": {"type": "string", "minLength": 1, "maxLength": 200},
+    "discipline": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,127}$"},
+    "specializations": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "competencies": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "object", "additionalProperties": false, "required": ["capabilityId", "capabilityVersion", "requiredProficiency"], "properties": {"capabilityId": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,127}$"}, "capabilityVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}, "requiredProficiency": {"enum": ["FOUNDATIONAL", "INTERMEDIATE", "ADVANCED", "EXPERT"]}}}},
+    "roles": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"enum": ["COORDINATOR", "ANALYST", "EXECUTOR", "RESEARCHER", "REVIEWER", "AUDITOR"]}},
+    "jurisdictions": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z]{2}$"}},
+    "methodologyRefs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
+    "outputContractRefs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
+    "requiredTools": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "governanceRef": {"type": "string", "minLength": 3},
+    "maxConcurrent": {"type": "integer", "minimum": 1, "maximum": 64},
+    "costUnits": {"type": "integer", "minimum": 0, "maximum": 100000}
+  }
+}

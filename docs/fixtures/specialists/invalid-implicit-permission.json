@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "2.0", "kind": "SpecialistProfile", "id": "legal.contracts.cl", "version": "1.0.0",
+  "displayName": "Contrato", "discipline": "legal", "competencies": [{"capabilityId": "legal.contracts.clause-analysis", "capabilityVersion": "1.0.0", "requiredProficiency": "ADVANCED"}],
+  "roles": ["ANALYST"], "requiredTools": [], "maxConcurrent": 1, "costUnits": 2,
+  "grantAllTools": true
+}
