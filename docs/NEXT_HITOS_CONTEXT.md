@@ -781,3 +781,28 @@ git diff --check
 
 ### Siguiente incremento
 - S1-C.3-C3-B: corrección de carreras detectadas, prueba end-to-end entre JVM y crash-injection antes/después de commit; verificación de recuperación y reconciliación durable.
+
+## S1-C.3-C3-B1 — Transiciones reales entre JVM y reinicio (validación local pendiente)
+
+### Implementación
+- `SpecialistGovernanceProcessWorker`: proceso JVM independiente que ejecuta `SpecialistGovernanceService.transition(...)` con idempotencia real, sin SQL simulado.
+- `SpecialistGovernanceProcessRecoveryTest`: dos JVM concurrentes con claves diferentes y misma revisión; solo una debe confirmar la transición. Comprueba decisiones e idempotencia persistidas.
+- Prueba de respuesta perdida: JVM termina con `Runtime.halt(32)` **después de retornar `transition()`**, que ya realizó commit; una segunda JVM reintenta la misma clave y debe recuperar el resultado sin duplicados.
+- Prueba de terminación **antes de invocar** la transición: la clave no queda reservada y otra JVM puede ejecutar el comando.
+- Sin modificación de código productivo, endpoints, Event Bus v1 ni flags del selector v2.
+
+### Límites de certificación
+- **No se prueba todavía un crash dentro de la transacción abierta**, ni un corte de energía, ni el consumidor del outbox. La prueba `halt-before` ocurre antes de comenzar la transición y no debe presentarse como crash-injection intratransaccional.
+- La prueba `halt-after` certifica reintento tras commit con respuesta no entregada, no pérdida de datos ante corte de energía.
+- No hay exactamente-una-vez en transporte ni auditoría anclada. La integridad de outbox debe certificarse con migración offline explícita y snapshot cuando corresponda.
+- Si se detectan bloqueos, errores de clase, o carreras, corregir antes de PR. No declarar S1-C.3-C3 completamente cerrado.
+
+### Validación obligatoria
+- `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceProcessRecoveryTest' --no-daemon --console=plain`
+- `./gradlew clean test --no-daemon --console=plain`
+- `git diff --check`
+- Registrar resultados reales antes de cierre.
+
+### Siguiente incremento: S1-C.3-C3-B2
+- Inyección de caída *dentro* de una transacción SQLite y comprobación de rollback/WAL, reconciliación de outbox y baseline, y pruebas de concurrencia sostenida y recuperación tras fallo.
+- F4/G10-K permanece OPEN; selector v2 sigue deshabilitado.
