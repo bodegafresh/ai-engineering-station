@@ -906,3 +906,13 @@ git diff --check
 - Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistSelectionContractTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
 - Próximo H02-C: adaptador read-only gobernado, elegibilidad ACTIVE, feature flag separado apagado, fail-closed y pruebas de rollback/paridad antes de cualquier activación.
 - F4/G10-K permanece OPEN. No hay certificación Quarkus/Ollama ni permisos implícitos.
+
+## H02-C — Adaptador read-only del registro gobernado (implementación preparada; certificación Fedora pendiente)
+
+- Se añade `GovernedSpecialistSelector`: adaptador Java aislado sobre `SpecialistSelectionContract`, con habilitación explícita por constructor. Deshabilitado devuelve `BLOCKED_SPECIALIST` sin tocar SQLite; habilitado lee SQLite en modo read-only y falla cerrado ante archivo/esquema ausente o integridad inválida.
+- Verifica manifiestos **de todas las filas** (incluidas inactivas) con `SpecialistRegistryManifest.validate`: identidad, versión, JSON canónico y SHA-256. Sólo proyecta perfiles `ACTIVE` de origen `PROPOSAL`; excluye bootstrap legacy para evitar mezclar rutas v1/v2.
+- Preserva capacidades, herramientas requeridas, coste y concurrencia del manifiesto; la selección no autoriza ejecución ni concede permisos. No se añade CDI, endpoint, consumer, nueva propiedad de configuración ni fallback a v1.
+- `GovernedSpecialistSelectorTest` prueba modo deshabilitado sin creación de base, estado DRAFT, activación humana, herramientas, revocación, alteración de hash incluso en filas inactivas y aislamiento legacy.
+- Validación requerida en Fedora: `./gradlew :apps:control-plane:test --tests '*GovernedSpecialistSelectorTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. Registrar resultados reales en PR; **Gradle no ejecutado en el entorno de generación**.
+- Límite: la selección no verifica cadena completa de auditoría/outbox ni revalida al despachar ejecución; no habilitar runtime todavía. F4/G10-K sigue OPEN.
+- Siguiente **H02-D**: integrar el adaptador bajo flag independiente deshabilitado por defecto, autoridad explícita y chequeo en punto de uso; sombra, métricas, pruebas de rollback y compatibilidad. Después H02-E/F: reconciliación, E2E y eliminación de duplicaciones probadamente inactivas.
