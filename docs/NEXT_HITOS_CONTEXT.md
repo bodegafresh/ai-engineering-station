@@ -852,3 +852,12 @@ git diff --check
 - Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceReconcilerTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - Limitaciones: no demuestra integridad criptográfica contra manipulación coordinada, ni reparación segura, ni certifica un consumidor de outbox. F4/G10-K sigue OPEN; Event Bus v1 y selector v2 intactos.
 - Próximo H01-C4: runbook de backup/restore y diagnóstico operacional; H01-C5: certificación integral.
+
+## H01-C4 — Runbook de respaldo y recuperación SQLite (entrega preparada; validación pendiente)
+
+- Se incorpora `scripts/aies-sqlite-recovery.py` con `backup`, `verify` y `restore` hacia **destinos nuevos exclusivamente**. Usa la API SQLite de backup compatible con WAL; no sobrescribe bases existentes ni ejecuta reparaciones.
+- Se incorpora `docs/H01-C4-SQLITE-RECOVERY-RUNBOOK.md`: preservación de evidencia, procedimiento ante incidentes, restauración aislada, comprobaciones y autorización humana antes de un eventual cambio productivo.
+- `PRAGMA integrity_check`, `foreign_key_check` y SHA-256 certifican integridad estructural de la copia; **no reemplazan** la reconciliación semántica H01-C3 ni la verificación de continuidad de estados.
+- Pruebas Python de WAL, copia, rechazo de overwrite, corrupción y restauración aislada. Validar en Fedora con `python3 -m unittest discover -s tests/ops -p 'test_sqlite_recovery.py' -v`, `./gradlew clean test --no-daemon --console=plain` y `git diff --check`.
+- Sin endpoints, activación de especialistas, cambios a Event Bus v1 ni selector v2. F4/G10-K sigue OPEN.
+- Próximo H01-C5: certificación integral, incluyendo reconciliación H01-C3 sobre copia restaurada y evidencia de operación de recuperación.
