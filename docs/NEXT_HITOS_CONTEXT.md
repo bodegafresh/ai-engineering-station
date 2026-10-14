@@ -840,3 +840,15 @@ git diff --check
 - Se conservan el servicio productivo, Event Bus v1 y selector v2 deshabilitado. El test prueba caída de proceso, no corte eléctrico, durabilidad física, fairness de SQLite ni exactly-once en transporte.
 - Validación pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceCrashContentionTest' --no-daemon --console=plain` y `./gradlew clean test --no-daemon --console=plain`. Registrar evidencia antes del PR.
 - Siguiente H01-C3: reconciliación diagnóstica de decisiones, idempotencia y outbox con pruebas de corrupción/ausencia y política fail-closed; después H01-C4 runbook y H01-C5 certificación integral. F4/G10-K permanece OPEN.
+
+
+## H01-C3 — Reconciliación diagnóstica de gobernanza (implementación preparada; validación Fedora pendiente)
+
+- `SpecialistGovernanceReconciler.verify(Path)` abre SQLite en modo read-only, usa una única transacción de lectura y verifica correspondencia entre decisiones, outbox, baseline e idempotencia.
+- Detecta decisiones sin evento, eventos huérfanos, diferencias de campos, baseline huérfano y comandos sin decisión confirmada o con metadatos incompatibles.
+- No exige que cada decisión tenga una clave idempotente: la API histórica permite comandos sin clave. No repara ni publica datos.
+- Falla cerrado ante esquema ausente, corrupción o error SQL; la verificación **no está conectada aún** al gateway ni al selector.
+- Tests nuevos de ausencia de base/esquema, comando huérfano y esquema vacío consistente.
+- Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceReconcilerTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- Limitaciones: no demuestra integridad criptográfica contra manipulación coordinada, ni reparación segura, ni certifica un consumidor de outbox. F4/G10-K sigue OPEN; Event Bus v1 y selector v2 intactos.
+- Próximo H01-C4: runbook de backup/restore y diagnóstico operacional; H01-C5: certificación integral.
