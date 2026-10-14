@@ -823,3 +823,12 @@ git diff --check
 
 ### Próximo incremento
 - H01-B2.2: estrés multiproceso sostenido, fault injection con contención y procedimiento verificable de reconciliación/recuperación. No presentar B2.1 como cierre total de H01.
+
+## H01-C1 — Contención sostenida entre JVM (implementación preparada; validación Fedora pendiente)
+
+- Se incorpora `SpecialistGovernanceContentionTest`: 12 rondas independientes, 4 JVM por ronda, compitiendo con barrera de inicio por la misma revisión CAS del servicio real.
+- Cada ronda inicializa explícitamente gobernanza y outbox, y exige exactamente una transición exitosa, una decisión, una clave de idempotencia y un evento outbox. Se verifica además el snapshot consistente.
+- La prueba conserva logs por proceso para diagnóstico y termina los workers remanentes en `finally`. No modifica código productivo, endpoints, permisos, Event Bus v1 ni flags del selector v2.
+- Validación pendiente en Fedora: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceContentionTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Límite:** no representa carga de larga duración ni garantiza ausencia de starvation; si se detecta `SQLITE_BUSY`, clasificarlo y corregir la causa antes de cerrar. No se ha ejecutado Gradle en el entorno de generación.
+- Siguiente H01-C2: crash-injection bajo contención, recuperación WAL y reconciliación de decisiones/idempotencia/outbox; después runbook y certificación integral. F4/G10-K sigue OPEN.
