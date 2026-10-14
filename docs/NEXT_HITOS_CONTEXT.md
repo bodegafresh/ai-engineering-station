@@ -916,3 +916,12 @@ git diff --check
 - Validación requerida en Fedora: `./gradlew :apps:control-plane:test --tests '*GovernedSpecialistSelectorTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. Registrar resultados reales en PR; **Gradle no ejecutado en el entorno de generación**.
 - Límite: la selección no verifica cadena completa de auditoría/outbox ni revalida al despachar ejecución; no habilitar runtime todavía. F4/G10-K sigue OPEN.
 - Siguiente **H02-D**: integrar el adaptador bajo flag independiente deshabilitado por defecto, autoridad explícita y chequeo en punto de uso; sombra, métricas, pruebas de rollback y compatibilidad. Después H02-E/F: reconciliación, E2E y eliminación de duplicaciones probadamente inactivas.
+
+## H02-D1 — Fachada de selección explícita (implementación preparada; validación Fedora pendiente)
+
+- `SpecialistSelectionFacade` introduce una frontera de política de selección con modos `LEGACY_V1` (predeterminado al construir mediante `legacy`) y `GOVERNED_V2` (elección explícita del llamador). Es una clase aislada: **todavía no existe cableado CDI, configuración runtime, endpoint ni consumidor Event Bus nuevo**.
+- En modo legacy usa el contrato H02-B y sus cuatro candidatos congelados sin abrir SQLite. En modo gobernado delega al adaptador H02-C, propaga fallos de integridad/SQLite sin fallback a legacy y rechaza una asignación cuya procedencia no sea `GOVERNED_V2`.
+- No concede herramientas ni autorización de ejecución. Las decisiones siguen siendo datos, no permisos. No cambia el selector v1 productivo ni activa v2.
+- `SpecialistSelectionFacadeTest` comprueba aislamiento legacy, ausencia de fallback, procedencia gobernada y propagación de rechazos.
+- **Validación local pendiente:** `./gradlew :apps:control-plane:test --tests '*SpecialistSelectionFacadeTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. No declarar certificado hasta registrar resultados reales.
+- **Siguiente H02-D2:** inspeccionar el punto de composición runtime, definir flag independiente apagado por defecto y autorización explícita, integrar fachada sin reemplazar Event Bus v1; añadir prueba de configuración/rollback, métricas y chequeo de integridad en punto de uso antes de cualquier activación. H02-E/F y F4/G10-K siguen pendientes.
