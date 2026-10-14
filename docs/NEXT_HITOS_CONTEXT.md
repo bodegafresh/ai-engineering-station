@@ -861,3 +861,29 @@ git diff --check
 - Pruebas Python de WAL, copia, rechazo de overwrite, corrupción y restauración aislada. Validar en Fedora con `python3 -m unittest discover -s tests/ops -p 'test_sqlite_recovery.py' -v`, `./gradlew clean test --no-daemon --console=plain` y `git diff --check`.
 - Sin endpoints, activación de especialistas, cambios a Event Bus v1 ni selector v2. F4/G10-K sigue OPEN.
 - Próximo H01-C5: certificación integral, incluyendo reconciliación H01-C3 sobre copia restaurada y evidencia de operación de recuperación.
+
+## H01-C5 — Certificación integrada de restauración y reconciliación (pendiente de validación Fedora)
+
+### Alcance entregado
+- `SpecialistGovernanceRecoveryCertificationTest`: genera una base real mediante `SpecialistRegistryStore` y `SpecialistGovernanceService`, instala el outbox, ejecuta una transición autorizada e idempotente y verifica el estado durable.
+- Ejecuta el script operativo **real** H01-C4 (`backup`, `verify`, `restore`) mediante un subproceso Python; no implementa una segunda ruta de backup.
+- Compara el reporte H01-C3 antes y después de restaurar, comprueba `SpecialistGovernanceSnapshot` y `SpecialistGovernanceOutbox` sobre la copia, y verifica que la restauración no sobrescribe destinos.
+- Prueba negativa: altera el actor del outbox en la copia restaurada; la estructura SQLite sigue siendo válida, pero el reconciliador detecta la inconsistencia y falla cerrado. Original y respaldo permanecen válidos.
+- Prueba negativa: una base SQLite estructuralmente correcta pero sin migración de outbox se restaura; la reconciliación semántica rechaza el esquema incompleto.
+
+### Validación obligatoria antes de cerrar el PR
+```bash
+./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceRecoveryCertificationTest' --no-daemon --console=plain
+python3 -m unittest discover -s tests/ops -p 'test_sqlite_recovery.py' -v
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Límites y estado
+- **Implementación preparada; no se ejecutó Gradle en el entorno de generación.** Registrar los resultados de Fedora antes del commit/PR y corregir cualquier falla.
+- La prueba valida recuperación de gobernanza con el servicio y el reconciliador reales, pero no simula pérdida física de disco, fsync de hardware, restauración sobre producción ni el consumidor del outbox. No garantiza exactly-once en transporte.
+- No cambia producción, no añade endpoints ni activa selección v2; Event Bus v1 intacto. F4/G10-K sigue OPEN.
+- H01 puede considerarse certificado para el **alcance local probado** después de superar todas las suites y revisar evidencia; la certificación operativa de recuperación ante desastre y el E2E real de F4 son trabajos separados.
+
+### Próximo paso recomendado
+- H02: unificación de integración runtime del registro gobernado con contratos y feature flags explícitos, después de realizar un inventario de rutas realmente conectadas y tests de compatibilidad v1/v2. No activar selector v2 sin autorización, métricas, rollback y pruebas de extremo a extremo.
