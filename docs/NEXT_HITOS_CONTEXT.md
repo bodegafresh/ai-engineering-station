@@ -896,3 +896,13 @@ git diff --check
 - No se altera código productivo, Event Bus v1, selección v2, endpoints, scopes ni ejecución. F4/G10-K continúa OPEN.
 - Validación local requerida: `python3 -m unittest discover -s tests/architecture -p 'test_*.py' -v`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
 - Siguiente: **H02-B contrato de selección unificado y adaptadores de compatibilidad**, condicionado a revisar el informe generado contra el código y las rutas runtime reales. No eliminar componentes sin evidencia.
+
+## H02-B — Contrato de selección común aislado (validación Fedora pendiente)
+
+- El inventario H02-A recibido confirma referencias **estáticas**, no conectividad runtime: Event Bus v1, TeamPlanner, CapabilityRouter y registro gobernado permanecen rutas separadas.
+- Se añade `SpecialistSelectionContract` como contrato Java puro de solicitud, candidato versionado, procedencia y decisión (`SELECTED`, `NO_MATCH`, `BLOCKED_SPECIALIST`, `NEEDS_CLARIFICATION`). El contrato no ejecuta especialistas ni concede herramientas.
+- `legacyV1()` reproduce las cuatro entradas congeladas y se compara con `SpecialistCatalog.select` mediante tests de equivalencia para capacidades y presupuestos. No se altera Event Bus v1.
+- La etiqueta `GOVERNED_V2` no autoriza ni valida estado: **no usar candidatos del registro sin filtro ACTIVE y verificación de integridad**. No se conecta todavía a SQLite, endpoints, planificador ni modelo.
+- Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistSelectionContractTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
+- Próximo H02-C: adaptador read-only gobernado, elegibilidad ACTIVE, feature flag separado apagado, fail-closed y pruebas de rollback/paridad antes de cualquier activación.
+- F4/G10-K permanece OPEN. No hay certificación Quarkus/Ollama ni permisos implícitos.
