@@ -82,6 +82,13 @@ public final class SpecialistOperatorGateway implements AutoCloseable {
     public synchronized SpecialistGovernanceService.Decision transition(
             String credential, String id, String version, SpecialistGovernanceService.Action action,
             long expectedRevision, String expectedHash) throws Exception {
+        return transition(credential,id,version,action,expectedRevision,expectedHash,null);
+    }
+
+    /** Authenticated idempotent transition; key never bypasses credential checks. */
+    public synchronized SpecialistGovernanceService.Decision transition(
+            String credential, String id, String version, SpecialistGovernanceService.Action action,
+            long expectedRevision, String expectedHash, String commandKey) throws Exception {
         Objects.requireNonNull(action);
         Operator operator = authenticate(credential);
         String scope = "specialists:" + action.name().toLowerCase(Locale.ROOT);
@@ -90,7 +97,7 @@ public final class SpecialistOperatorGateway implements AutoCloseable {
         // approval/activation separation in the same transaction as the decision insert.
         SpecialistGovernanceIntegrity.verify(dbPath, mapper);
         return governance.transition(id, version, action, expectedRevision, expectedHash,
-                new SpecialistGovernanceService.Principal(operator.subject(), operator.scopes()));
+                new SpecialistGovernanceService.Principal(operator.subject(), operator.scopes()),commandKey);
     }
 
     private void installSeparationGuard() throws Exception {

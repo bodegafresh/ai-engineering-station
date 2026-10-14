@@ -739,3 +739,22 @@ git diff --check
 - Pendiente S1-C.3-C2: idempotencia durable dentro de la transacción de `SpecialistGovernanceService`, prueba de concurrencia multiproceso, crash injection y recuperación. No se debe presentar S1-C.3-C como cerrado.
 - Sin endpoints, ejecución automática, publicación del outbox ni selector v2. Event Bus v1 intacto. F4/G10-K continúa OPEN.
 - Validación local pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceSnapshotTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+
+## S1-C.3-C2 — Idempotencia durable de transiciones de gobernanza (pendiente de validación local)
+
+### Alcance implementado
+- Sobrecarga opt-in de `SpecialistGovernanceService.transition(..., commandKey)`; mantiene la firma existente y el comportamiento de llamadas sin clave.
+- `specialist_governance_idempotency`: clave única durable, parámetros de comando y resultado persistido.
+- Replays con identidad, acción, revisión, versión y hash idénticos devuelven la decisión confirmada, sin repetir mutación ni trigger de outbox.
+- Reutilización de clave con contenido distinto falla cerrado. Autorización de scopes y verificación de manifiesto preceden al replay.
+- Registro de idempotencia se escribe en la misma transacción SQLite que estado y decisión; trigger del outbox sigue participando en esa transacción si está instalado.
+- Sobrecarga opt-in en `SpecialistOperatorGateway`: credencial y scope se verifican antes de invocar replay.
+- Pruebas JUnit: reapertura, replay, conflicto de clave y rollback tras revisión obsoleta.
+
+### Límites, evidencia y continuidad
+- No se activa automáticamente el outbox, ni se añade un endpoint. Event Bus v1 y selector v2 intactos.
+- No se certifican aún concurrencia multiproceso, fallo abrupto del proceso, entrega outbox ni auditoría anclada.
+- La clave debe provenir de un operador autenticado; no aceptar claves generadas por un modelo no confiable.
+- Validación local pendiente: suite específica y `./gradlew clean test --no-daemon --console=plain`; documentar resultados antes de PR.
+- Siguiente S1-C.3-C3: pruebas JVM multiproceso, crash-injection, recuperación y endurecimiento de integridad.
+- F4/G10-K permanece OPEN.

@@ -40,12 +40,26 @@ public final class SpecialistGovernanceService implements AutoCloseable {
                 "UNIQUE(id,version,to_revision))");
             s.execute("CREATE INDEX IF NOT EXISTS specialist_registry_decisions_lookup " +
                 "ON specialist_registry_decisions(id,version,seq)");
+            s.execute("CREATE TABLE IF NOT EXISTS specialist_governance_idempotency (" +
+                "command_key TEXT PRIMARY KEY, id TEXT NOT NULL, version TEXT NOT NULL," +
+                "action TEXT NOT NULL, expected_revision INTEGER NOT NULL," +
+                "expected_hash TEXT NOT NULL, actor TEXT NOT NULL," +
+                "state TEXT NOT NULL, result_revision INTEGER NOT NULL)");
         }
     }
 
     public synchronized Decision transition(String id, String version, Action action,
                                             long expectedRevision, String expectedHash,
                                             Principal principal) throws Exception {
+        return transition(id,version,action,expectedRevision,expectedHash,principal,null);
+    }
+
+    /** Durable optional command key; original overload remains compatible. */
+    public synchronized Decision transition(String id, String version, Action action,
+                                            long expectedRevision, String expectedHash,
+                                            Principal principal, String commandKey) throws Exception {
+        if (commandKey != null && !commandKey.matches("[a-zA-Z0-9._:-]{8,128}"))
+            throw new IllegalArgumentException("Invalid command key");
         Objects.requireNonNull(action);
         Objects.requireNonNull(principal);
         if (!principal.scopes().contains("specialists:" + action.name().toLowerCase(java.util.Locale.ROOT)))
@@ -62,6 +76,27 @@ public final class SpecialistGovernanceService implements AutoCloseable {
         boolean originalAutoCommit = db.getAutoCommit();
         db.setAutoCommit(false);
         try {
+            if (commandKey != null) {
+                try (PreparedStatement p=db.prepareStatement(
+                    "SELECT id,version,action,expected_revision,expected_hash,actor,state,result_revision " +
+                    "FROM specialist_governance_idempotency WHERE command_key=?")) {
+                    p.setString(1,commandKey);
+                    try(ResultSet rs=p.executeQuery()) {
+                        if(rs.next()) {
+                            if (!rs.getString(1).equals(id) || !rs.getString(2).equals(version)
+                                || !rs.getString(3).equals(action.name())
+                                || rs.getLong(4)!=expectedRevision
+                                || !rs.getString(5).equals(expectedHash)
+                                || !rs.getString(6).equals(principal.subject()))
+                                throw new SecurityException("Idempotency key conflict");
+                            Decision prior=new Decision(id,version,rs.getString(7),rs.getLong(8),
+                                expectedHash,principal.subject(),action.name());
+                            db.commit();
+                            return prior;
+                        }
+                    }
+                }
+            }
             String before;
             long revision;
             String hash;
@@ -99,6 +134,17 @@ public final class SpecialistGovernanceService implements AutoCloseable {
                 p.setString(7,hash);p.setString(8,principal.subject());
                 p.setString(9,action.name());p.setString(10,Instant.now().toString());
                 p.executeUpdate();
+            }
+            if (commandKey != null) {
+                try (PreparedStatement p=db.prepareStatement(
+                    "INSERT INTO specialist_governance_idempotency " +
+                    "(command_key,id,version,action,expected_revision,expected_hash,actor,state,result_revision) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?)")) {
+                    p.setString(1,commandKey);p.setString(2,id);p.setString(3,version);
+                    p.setString(4,action.name());p.setLong(5,expectedRevision);
+                    p.setString(6,expectedHash);p.setString(7,principal.subject());
+                    p.setString(8,after);p.setLong(9,next);p.executeUpdate();
+                }
             }
             db.commit();
             return new Decision(id,version,after,next,hash,principal.subject(),action.name());
