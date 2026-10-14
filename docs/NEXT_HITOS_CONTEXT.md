@@ -595,3 +595,38 @@ git diff --check
 ### Learning
 - Distinguish expired-lease fencing from automatic terminal-state recovery. Do not assert that an expired lease transitions to DEAD unless production logic does so.
 - Use independent persisted SQLite and actual file bytes for negative evidence; no simulated approved audit or modified production database.
+
+## F4.3-G10-J — Linux process restart evidence with read-only runtime certification (F4 OPEN)
+
+### Delivered
+- `f43g10j-runtime-restart.sh` is an **opt-in Linux operator procedure**, not an automatic restart or crash injector. It invokes G9's authenticated read-only acceptance/recovery snapshot and captures a distinct Linux PID/starttime observation before and after an operator-controlled Quarkus restart. Uses existing G10-E curl secret-safe transport and only loopback HTTP.
+- The operator explicitly supplies `AIES_QUARKUS_PID` and `AIES_DATA_ROOT` in both phases. The script refuses an unchanged process identity or changed canonical root; it hashes, but never records, process argv. It does not independently prove that Quarkus is configured to use the supplied root.
+- `f43g10j-evidence-verify.sh` checks both observations, snapshot equality and the SHA-256 of each snapshot; it is read-only and can be rerun offline.
+- `f43g10j-shell-tests.sh` covers a passing fixture, unchanged PID rejection and tampered snapshot rejection. No production writes, no fabricated audit decisions or Ollama results.
+
+### Operator runbook (Linux; Quarkus running independently)
+```bash
+export AIES_WORKFLOW_ID='existing-imported-workflow'
+export AIES_CERT_DIR="$PWD/.local-certifications/g10j-01"
+export AIES_DATA_ROOT='/absolute/path/to/actual/quarkus-data-root'
+# Export AIES_WORKSPACE_CHANGES_TOKEN securely, do not echo or commit it.
+export AIES_QUARKUS_PID='ACTUAL_PID_BEFORE'
+bash scripts/f43g10j-runtime-restart.sh before
+# Manually stop Quarkus; verify it stopped. Restart it with SAME data root.
+export AIES_QUARKUS_PID='ACTUAL_NEW_PID_AFTER'
+bash scripts/f43g10j-runtime-restart.sh after
+bash scripts/f43g10j-evidence-verify.sh
+bash scripts/f43g10g-evidence-check.sh # only if G10-F report also exists
+```
+
+### Local validation
+```bash
+bash scripts/f43g10j-shell-tests.sh
+bash -n scripts/f43g10j-*.sh
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Explicit limitations and G10-K
+- G10-J verifies *operator-supplied* process identity metadata and stable HTTP state. It is not a controlled JVM kill, cannot attest actual Quarkus configuration, and does not prove SQLite bytes are unchanged, a real Ollama model was called, event-loop latency, 429 saturation, or full end-to-end F4 acceptance.
+- G10-K must implement opt-in isolated subprocess orchestration with actual PID supervision and fail-closed crash points; instrument actual Ollama identity and timing at the adapter, demonstrate real 429/backpressure, and produce an operator-reviewable immutable certification bundle. No automatic replay of ambiguous POST/model invocations. **F4 remains OPEN.**
