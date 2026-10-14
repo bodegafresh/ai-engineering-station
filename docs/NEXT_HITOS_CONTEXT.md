@@ -806,3 +806,20 @@ git diff --check
 ### Siguiente incremento: S1-C.3-C3-B2
 - Inyección de caída *dentro* de una transacción SQLite y comprobación de rollback/WAL, reconciliación de outbox y baseline, y pruebas de concurrencia sostenida y recuperación tras fallo.
 - F4/G10-K permanece OPEN; selector v2 sigue deshabilitado.
+
+## H01 / S1-C.3-C3-B2 — Crash intratransaccional real (implementación preparada; validación Fedora pendiente)
+
+### Alcance
+- `SpecialistGovernanceService` admite un *probe* package-private, no configurable por API ni por LLM, que se ejecuta después de las escrituras de estado, decisión e idempotencia y **antes** del commit. El constructor público mantiene comportamiento anterior (no-op).
+- `SpecialistGovernanceProcessWorker` soporta el modo exclusivo de pruebas `halt-in-transaction` (exit 33) para terminar abruptamente la JVM mientras SQLite mantiene una transacción abierta.
+- `SpecialistGovernanceProcessRecoveryTest` verifica rollback de decisión/idempotencia/outbox, integridad del snapshot y reintento desde otra JVM que confirma una sola transición.
+- El outbox debe instalarse explícitamente sobre una base de pruebas nueva; no hay migración automática, consumidor ni publicación.
+
+### Validación y límites
+- Ejecutar en Fedora `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceProcessRecoveryTest' --no-daemon --console=plain` y `./gradlew clean test --no-daemon --console=plain`.
+- Este incremento prueba terminación abrupta de una JVM, **no** corte eléctrico real, garantía de fsync de hardware, carga sostenida, entrega del outbox ni reconciliación de bases corruptas.
+- Antes de cerrar todo S1-C.3-C3 quedan pruebas de estrés multiproceso sostenido, recuperación bajo contención y runbook de integridad/restauración. Registrar resultados reales en el PR.
+- Event Bus v1 intacto; selector v2 apagado; F4/G10-K sigue OPEN.
+
+### Próximo incremento
+- H01-B2.2: estrés multiproceso sostenido, fault injection con contención y procedimiento verificable de reconciliación/recuperación. No presentar B2.1 como cierre total de H01.
