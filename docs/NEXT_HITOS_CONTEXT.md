@@ -758,3 +758,26 @@ git diff --check
 - Validación local pendiente: suite específica y `./gradlew clean test --no-daemon --console=plain`; documentar resultados antes de PR.
 - Siguiente S1-C.3-C3: pruebas JVM multiproceso, crash-injection, recuperación y endurecimiento de integridad.
 - F4/G10-K permanece OPEN.
+
+## S1-C.3-C3-A — Certificación inicial de concurrencia (entrega pendiente de validación)
+
+### Objetivo y alcance real
+- Prueba JUnit con dos instancias independientes de `SpecialistGovernanceService` y dos conexiones SQLite compitiendo por la misma revisión CAS. Verifica una única decisión y un único registro de idempotencia confirmados.
+- Prueba de **dos procesos JVM reales** con `ProcessBuilder`, conectados a una misma base SQLite, compitiendo por insertar la misma clave durable bajo `BEGIN IMMEDIATE`. Verifica exclusión y persistencia entre procesos.
+- Worker de pruebas aislado sin REST, modelos ni credenciales. Su transacción SQL verifica una propiedad de SQLite, **no** reemplaza una prueba end-to-end de dos gateways.
+- No se modifica código productivo; el incremento es deliberadamente de certificación y detección de fallos, no de funcionalidad nueva.
+
+### Criterios y limitaciones
+- La suite debe ejecutar ambas pruebas y terminar satisfactoriamente antes del PR. Si revela carrera, bloqueo o `SQLITE_BUSY`, corregir la implementación productiva antes de declarar cierre.
+- Pendientes: pruebas multiproceso end-to-end del servicio completo, inyección de caída de proceso antes/después del commit, recuperación WAL y reconciliación de idempotencia con decisiones y outbox.
+- No hay garantía exactly-once de entrega ni auditoría criptográficamente inmutable.
+- Event Bus v1 intacto, selector v2 deshabilitado, F4/G10-K continúa OPEN.
+
+### Comandos de verificación
+- `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceMultiprocessTest' --no-daemon --console=plain`
+- `./gradlew clean test --no-daemon --console=plain`
+- `git diff --check`
+- Documentar resultados reales y advertencias antes de cerrar PR.
+
+### Siguiente incremento
+- S1-C.3-C3-B: corrección de carreras detectadas, prueba end-to-end entre JVM y crash-injection antes/después de commit; verificación de recuperación y reconciliación durable.
