@@ -887,3 +887,12 @@ git diff --check
 
 ### Próximo paso recomendado
 - H02: unificación de integración runtime del registro gobernado con contratos y feature flags explícitos, después de realizar un inventario de rutas realmente conectadas y tests de compatibilidad v1/v2. No activar selector v2 sin autorización, métricas, rollback y pruebas de extremo a extremo.
+
+## H02-A — Catastro verificable de integración (entrega preparada; validación Fedora pendiente)
+
+- Nuevo `scripts/aies-integration-inventory.py`: inventario estático reproducible y **read-only** de clases relevantes, referencias Java y defaults de feature flags; no confunde presencia de código con conectividad en runtime.
+- Nuevo `docs/architecture/H02-A-INTEGRATION-INVENTORY.md`: evidencia de rutas v1, planificación por perfiles, preview de capacidades y línea independiente de gobernanza; matriz de límites y plan H02-B a H02-F.
+- Tests Python `tests/architecture/test_integration_inventory.py` para rutas ausentes, referencias y estabilidad del reporte.
+- No se altera código productivo, Event Bus v1, selección v2, endpoints, scopes ni ejecución. F4/G10-K continúa OPEN.
+- Validación local requerida: `python3 -m unittest discover -s tests/architecture -p 'test_*.py' -v`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
+- Siguiente: **H02-B contrato de selección unificado y adaptadores de compatibilidad**, condicionado a revisar el informe generado contra el código y las rutas runtime reales. No eliminar componentes sin evidencia.
