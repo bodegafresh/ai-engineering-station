@@ -697,3 +697,11 @@ git diff --check
 - No habilitar v2 ni crear permisos por un token compartido: `WorkspaceOperatorAuthorizer` autentica un secreto, no identidades individuales con scopes.
 - Siguiente incremento: S1-C.2, snapshot consistente con escritores, integridad de auditoría anclada, autenticación real de operador, separación de funciones y pruebas multiproceso; luego selector v2 opt-in con rollback.
 - F4/G10-K sigue OPEN. No se ejecutó Gradle ni Ollama durante la generación del paquete; validar localmente.
+
+## S1-C.2 — Gateway aislado de operadores (validación local pendiente)
+- Nuevo `SpecialistOperatorGateway`: catálogo de identidades configuradas fuera de banda, secretos aleatorios con digest SHA-256, scopes exactos por acción, comparación de credenciales sin registrar secretos.
+- Trigger SQLite que rechaza en la misma transacción una activación por el aprobador de la revisión anterior; S1-B mantiene CAS y auditoría.
+- S1-C.1 se comprueba antes de cada mutación; pruebas JUnit de credencial errónea, scope insuficiente, separación de aprobación/activación, persistencia y configuración ambigua.
+- No hay REST, Event Bus v2 ni selección habilitada. La autenticación de usuarios HTTP, la separación del proponente, snapshot único concurrente, auditoría anclada y pruebas multiproceso siguen pendientes. No confundir SHA-256 de secretos aleatorios con almacenamiento seguro de contraseñas humanas.
+- Validar: `./gradlew :apps:control-plane:test --tests '*SpecialistOperatorGatewayTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
+- F4/G10-K sigue abierto.
