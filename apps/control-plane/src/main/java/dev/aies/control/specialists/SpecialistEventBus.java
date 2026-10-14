@@ -1,6 +1,8 @@
 package dev.aies.control.specialists;
 
 import io.quarkus.runtime.Startup;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.file.Path;
 import io.vertx.core.Vertx;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.json.JsonArray;
@@ -19,6 +21,8 @@ public class SpecialistEventBus {
     public static final String SELECT = "aies.specialists.select.v1";
     @Inject Vertx vertx;
     @ConfigProperty(name="aies.specialists.enabled", defaultValue="false") boolean enabled;
+    @ConfigProperty(name="aies.specialists.governed-selection.enabled", defaultValue="false") String governedFlag;
+    @ConfigProperty(name="aies.specialists.governed-selection.database", defaultValue="./data/specialists.sqlite") String governedDatabase;
     private MessageConsumer<JsonObject> consumer;
     private final List<SpecialistCatalog.Specialist> catalog = List.of(
         new SpecialistCatalog.Specialist("researcher",Set.of("research"),Set.of(),2,1),
@@ -28,28 +32,19 @@ public class SpecialistEventBus {
     );
     @PostConstruct void start() {
         if (!enabled) return;
+        // Construct at startup, never from request-supplied flags or paths.
+        SpecialistSelectionBridge bridge = new SpecialistSelectionBridge(
+            governedFlag, Path.of(governedDatabase), new ObjectMapper());
         consumer = vertx.eventBus().localConsumer(SELECT, message -> {
-            try {
-                JsonObject req = message.body();
-                Set<String> capabilities = strings(req.getJsonArray("capabilities"));
-                Set<String> permittedTools = strings(req.getJsonArray("permittedTools",new JsonArray()));
-                int budget = req.getInteger("budget",0);
-                var result = SpecialistCatalog.select(catalog,capabilities,permittedTools,budget);
-                if (result.isEmpty()) message.reply(new JsonObject().put("selected",false));
-                else message.reply(new JsonObject().put("selected",true).put("specialistId",result.get().specialistId())
-                    .put("costUnits",result.get().costUnits()));
-            } catch(Exception e) {message.fail(400,"Invalid specialist selection request");}
+            // SQLite is blocking I/O: never execute governed selection on the Vert.x event loop.
+            vertx.<JsonObject>executeBlocking(() -> bridge.select(message.body()), false)
+                .onSuccess(message::reply)
+                .onFailure(error -> {
+                    if (error instanceof IllegalArgumentException || error instanceof NullPointerException)
+                        message.fail(400, "Invalid specialist selection request");
+                    else message.fail(503, "Specialist selection unavailable");
+                });
         });
-    }
-    private static Set<String> strings(JsonArray input) {
-        if (input == null || input.size() > 32) throw new IllegalArgumentException("Invalid list");
-        Set<String> result = new HashSet<>();
-        for (Object o: input) {
-            if (!(o instanceof String s)) throw new IllegalArgumentException("Invalid capability");
-            dev.aies.control.communication.CommunicationContracts.id(s);
-            result.add(s);
-        }
-        return Set.copyOf(result);
     }
     @PreDestroy void stop() {if (consumer != null) consumer.unregister();}
 }
