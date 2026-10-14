@@ -705,3 +705,26 @@ git diff --check
 - No hay REST, Event Bus v2 ni selección habilitada. La autenticación de usuarios HTTP, la separación del proponente, snapshot único concurrente, auditoría anclada y pruebas multiproceso siguen pendientes. No confundir SHA-256 de secretos aleatorios con almacenamiento seguro de contraseñas humanas.
 - Validar: `./gradlew :apps:control-plane:test --tests '*SpecialistOperatorGatewayTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`.
 - F4/G10-K sigue abierto.
+
+
+## S1-C.3-B — Migración histórica controlada del outbox (entrega pendiente de validación local)
+
+### Alcance implementado
+- `SpecialistGovernanceHistoryMigration`: migración explícita y transaccional de decisiones anteriores al outbox; verifica primero la continuidad S1-C.1 y rechaza corrupción.
+- Registra las decisiones preexistentes como **baseline histórico**, separado de eventos nuevos: `specialist_governance_outbox_baseline`. Esas decisiones NO deben ser publicadas ni reejecutadas.
+- Crea la tabla y el trigger del outbox en una misma transacción SQLite `BEGIN IMMEDIATE`, con rollback ante fallos.
+- `dispatchableCount` cuenta exclusivamente eventos no marcados como baseline; es una consulta de diagnóstico, no un consumidor.
+- Reejecución de migración no amplía el baseline ni reenvía eventos. Si detecta outbox parcial sin baseline, rechaza para reconciliación manual.
+- Pruebas JUnit para historia previa, separación entre eventos históricos y nuevos, reejecución y corrupción.
+
+### Seguridad y límites
+- Migración **offline**, invocada únicamente por operador autorizado tras backup; no ejecutarla desde el LLM, endpoint o arranque automático.
+- La migración no implementa todavía idempotencia durable de comandos, concurrencia multiproceso, consumidor, acknowledgements, anclaje criptográfico ni crash-injection.
+- Un outbox completo existente sin baseline no se reclasifica como histórico; requiere decisión explícita del operador.
+- Mantener Event Bus v1 y selector v2 intactos y deshabilitados. F4/G10-K permanece OPEN.
+
+### Validación y siguiente incremento
+- Ejecutar `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceHistoryMigrationTest' --no-daemon --console=plain`.
+- Ejecutar `./gradlew clean test --no-daemon --console=plain` y `git diff --check`.
+- Registrar resultados reales antes de PR; no afirmar pruebas ejecutadas durante generación del ZIP.
+- Siguiente S1-C.3-C: idempotencia durable de comandos con fingerprint actor/acción/revisión/hash, concurrencia multiproceso, snapshot consistente y recuperación con inyección de fallos.
