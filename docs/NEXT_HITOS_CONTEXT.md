@@ -662,3 +662,31 @@ git diff --check
 - `MethodologyRouter` puede reconocer documentación aunque el catálogo no ofrezca `documentation`: `BLOCKED_SPECIALIST` es un rechazo correcto; no inventar especialista ni alterar SQLite.
 - `PlanningPolicy` rechaza requisitos críticos con verificación `INSPECTION`; `NEEDS_CLARIFICATION` precede a selección.
 - G6 debe reconocer `NEEDS_CLARIFICATION`, `BLOCKED_SPECIALIST` y `BLOCKED_BUDGET` como estados de negocio no aprobatorios sin permitir importación; corrección operativa separada de S0.
+
+## S1-A — Specialists 2.0: registro SQLite aislado (entrega para validación; F4 OPEN)
+
+### Alcance implementado
+- `SpecialistRegistryManifest`: validación estricta de metadatos v2; campos desconocidos rechazados, capacidades compuestas, roles, límites y versiones. Canonicalización JSON recursiva por claves de objeto ordenadas (arrays preservan orden), UTF-8 y SHA-256. Esta canonicalización es **propia de S1-A**, no equivale a RFC 8785/JCS; no aceptar hashes de otra implementación sin vectores de prueba.
+- `SpecialistRegistryStore`: SQLite independiente, tablas aditivas, WAL, `busy_timeout`, unicidad por `(id,version)`, lectura verificando SHA-256 y JSON canónico, propuestas solo `DRAFT`, semillas legadas confiables con transacción e idempotencia y detección de colisiones.
+- Sin nuevas APIs REST ni Event Bus, sin cambios a `SpecialistEventBus` ni `SpecialistCatalog`, sin cambios a selección, planificación o ejecución. Los cuatro especialistas legados se mantienen como fuente activa del runtime existente. `bootstrapLegacy()` es un paso explícito para un registro aislado, no se ejecuta automáticamente en arranque.
+- Tests JUnit para persistencia/reapertura, hash determinista, rechazo de campos y permisos implícitos, semilla equivalente, colisiones y tamper. El paquete incluye instalador Bash fail-closed basado en blob exacto de `main`.
+
+### Seguridad y límites
+- No se implementan transiciones `DRAFT → ACTIVE`, aprobación, CAS de publicación, outbox, permisos, registro de modelos ni selección v2. S1-B deberá implementar autorización de operador por scope, revisión independiente, máquina de estados, CAS, outbox y revocación. S1-C integrará selector v1/v2 detrás de flag apagado por defecto y pruebas de compatibilidad.
+- Un perfil es metadato no confiable; `requiredTools` no concede permisos. No se ejecutan herramientas ni modelos, no se altera la auditoría y no se autoaprueba un perfil propuesto.
+- `bootstrapLegacy()` es una operación confiable de migración manual y debe invocarse solo bajo procedimiento de operador, con copia de seguridad y reconciliación. S1-A no expone endpoint para ejecutarla.
+- Validación JSON actual es subconjunto estricto del esquema S0 con semántica adicional; compatibilidad exhaustiva y vectores canónicos externos pendientes para S1-B.
+
+### Validación obligatoria
+```bash
+./gradlew :apps:control-plane:test --tests '*SpecialistRegistryStoreTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*SpecialistCatalogTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Siguiente hito: S1-B
+- Autorización real de operador con scopes separados; propuesta/validación/aprobación/publicación/revocación con CAS, auditoría durable, outbox y verificación de separación de funciones.
+- Reconciliación de revocación con intentos en vuelo, idempotencia, concurrencia multiproceso, pruebas negativas y compatibilidad sin alterar v1.
+- Posteriormente S1-C: selección por registro v2 y puente v1 opt-in, sin fallback silencioso ante corrupción o indisponibilidad.
+- **F4/G10-K continúa pendiente; no afirmar certificación de Quarkus/Ollama ni cierre de F4.**
