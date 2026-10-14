@@ -832,3 +832,11 @@ git diff --check
 - Validación pendiente en Fedora: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceContentionTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Límite:** no representa carga de larga duración ni garantiza ausencia de starvation; si se detecta `SQLITE_BUSY`, clasificarlo y corregir la causa antes de cerrar. No se ha ejecutado Gradle en el entorno de generación.
 - Siguiente H01-C2: crash-injection bajo contención, recuperación WAL y reconciliación de decisiones/idempotencia/outbox; después runbook y certificación integral. F4/G10-K sigue OPEN.
+
+## H01-C2 — Crash-injection bajo contención (implementación preparada; validación Fedora pendiente)
+
+- `SpecialistGovernanceProcessWorker` añade el modo de pruebas `halt-in-transaction-signaled`: escribe una señal tras completar las mutaciones dentro de la transacción y espera una señal de liberación antes de terminar la JVM con `halt(33)`. No se expone en REST, IA ni producción.
+- `SpecialistGovernanceCrashContentionTest` crea tres bases independientes; por ronda, inicia una JVM que mantiene la transacción abierta, arranca una JVM competidora y provoca la caída de la primera. Comprueba un único commit de decisión, idempotencia y outbox, snapshot y outbox íntegros y rechazo CAS del comando abortado al reintentarlo tras el commit competidor.
+- Se conservan el servicio productivo, Event Bus v1 y selector v2 deshabilitado. El test prueba caída de proceso, no corte eléctrico, durabilidad física, fairness de SQLite ni exactly-once en transporte.
+- Validación pendiente: `./gradlew :apps:control-plane:test --tests '*SpecialistGovernanceCrashContentionTest' --no-daemon --console=plain` y `./gradlew clean test --no-daemon --console=plain`. Registrar evidencia antes del PR.
+- Siguiente H01-C3: reconciliación diagnóstica de decisiones, idempotencia y outbox con pruebas de corrupción/ausencia y política fail-closed; después H01-C4 runbook y H01-C5 certificación integral. F4/G10-K permanece OPEN.

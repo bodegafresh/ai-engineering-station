@@ -19,8 +19,22 @@ public final class SpecialistGovernanceProcessWorker {
             Thread.sleep(10);
         }
         if ("halt-before".equals(mode)) Runtime.getRuntime().halt(31);
-        try (var service="halt-in-transaction".equals(mode)
-            ? new SpecialistGovernanceService(db,new ObjectMapper(), () -> Runtime.getRuntime().halt(33))
+        Runnable probe = () -> {
+            if ("halt-in-transaction".equals(mode)) Runtime.getRuntime().halt(33);
+            if ("halt-in-transaction-signaled".equals(mode)) {
+                try {
+                    Files.createFile(Path.of(barrier + ".inside"));
+                    long until = System.nanoTime() + 20_000_000_000L;
+                    while (!Files.exists(Path.of(barrier + ".release"))) {
+                        if (System.nanoTime() > until) Runtime.getRuntime().halt(34);
+                        Thread.sleep(10);
+                    }
+                } catch (Exception ex) { throw new IllegalStateException("Crash probe failed", ex); }
+                Runtime.getRuntime().halt(33);
+            }
+        };
+        try (var service=("halt-in-transaction".equals(mode) || "halt-in-transaction-signaled".equals(mode))
+            ? new SpecialistGovernanceService(db,new ObjectMapper(),probe)
             : new SpecialistGovernanceService(db,new ObjectMapper())) {
             var actor=new SpecialistGovernanceService.Principal("operator-test",Set.of("specialists:validate"));
             service.transition("documentation.specialist","1.0.0",
