@@ -24,8 +24,15 @@ public final class SpecialistGovernanceService implements AutoCloseable {
                            String manifestSha256, String actor, String action) {}
     private final Connection db;
     private final ObjectMapper mapper;
+    // Package-private deterministic crash seam. Never configurable through REST or LLM.
+    private final Runnable beforeCommitProbe;
 
     public SpecialistGovernanceService(Path file, ObjectMapper mapper) throws Exception {
+        this(file, mapper, () -> {});
+    }
+
+    SpecialistGovernanceService(Path file, ObjectMapper mapper, Runnable beforeCommitProbe) throws Exception {
+        this.beforeCommitProbe = Objects.requireNonNull(beforeCommitProbe);
         this.mapper = Objects.requireNonNull(mapper);
         db = new org.sqlite.JDBC().connect("jdbc:sqlite:" + file.toAbsolutePath().normalize(),
                                            new java.util.Properties());
@@ -146,6 +153,9 @@ public final class SpecialistGovernanceService implements AutoCloseable {
                     p.setString(8,after);p.setLong(9,next);p.executeUpdate();
                 }
             }
+            // Invoked after all writes, while the transaction is still open.
+            // Test worker may terminate its JVM here to prove atomic rollback.
+            beforeCommitProbe.run();
             db.commit();
             return new Decision(id,version,after,next,hash,principal.subject(),action.name());
         } catch (Exception e) {

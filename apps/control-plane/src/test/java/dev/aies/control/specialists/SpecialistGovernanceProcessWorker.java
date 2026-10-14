@@ -19,7 +19,9 @@ public final class SpecialistGovernanceProcessWorker {
             Thread.sleep(10);
         }
         if ("halt-before".equals(mode)) Runtime.getRuntime().halt(31);
-        try (var service=new SpecialistGovernanceService(db,new ObjectMapper())) {
+        try (var service="halt-in-transaction".equals(mode)
+            ? new SpecialistGovernanceService(db,new ObjectMapper(), () -> Runtime.getRuntime().halt(33))
+            : new SpecialistGovernanceService(db,new ObjectMapper())) {
             var actor=new SpecialistGovernanceService.Principal("operator-test",Set.of("specialists:validate"));
             service.transition("documentation.specialist","1.0.0",
                 SpecialistGovernanceService.Action.VALIDATE,0,hash,actor,key);

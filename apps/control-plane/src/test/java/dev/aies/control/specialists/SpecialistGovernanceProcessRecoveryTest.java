@@ -67,6 +67,27 @@ class SpecialistGovernanceProcessRecoveryTest {
         assertCounts(db,1,1);
     }
 
+    @Test void crashInsideOpenTransactionRollsBackDecisionCommandAndOutbox() throws Exception {
+        Path db=temp.resolve("intratransaction.sqlite");
+        String hash=propose(db);
+        try(var service=new SpecialistGovernanceService(db,new ObjectMapper())) { }
+        SpecialistGovernanceOutbox.install(db);
+        Path barrier=temp.resolve("start-inside");
+        Files.createFile(barrier);
+        Process crashed=spawn(db,hash,"durable-inside-0001",barrier,"halt-in-transaction",1);
+        try { assertEquals(33,exit(crashed),Files.readString(temp.resolve("worker-1.log"))); }
+        finally {kill(crashed);}
+        assertCounts(db,0,0);
+        assertEquals(0,SpecialistGovernanceOutbox.count(db));
+        SpecialistGovernanceSnapshot.verify(db);
+        Process retry=spawn(db,hash,"durable-inside-0001",barrier,"normal",2);
+        try { assertEquals(0,exit(retry),Files.readString(temp.resolve("worker-2.log"))); }
+        finally {kill(retry);}
+        assertCounts(db,1,1);
+        assertEquals(1,SpecialistGovernanceOutbox.count(db));
+        SpecialistGovernanceOutbox.verify(db);
+    }
+
     private String propose(Path db) throws Exception {
         try(var registry=new SpecialistRegistryStore(db,new ObjectMapper())) {
             return registry.propose(MANIFEST).manifestSha256();
