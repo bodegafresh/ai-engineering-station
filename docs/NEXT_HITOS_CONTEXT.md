@@ -925,3 +925,12 @@ git diff --check
 - `SpecialistSelectionFacadeTest` comprueba aislamiento legacy, ausencia de fallback, procedencia gobernada y propagación de rechazos.
 - **Validación local pendiente:** `./gradlew :apps:control-plane:test --tests '*SpecialistSelectionFacadeTest' --no-daemon --console=plain`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. No declarar certificado hasta registrar resultados reales.
 - **Siguiente H02-D2:** inspeccionar el punto de composición runtime, definir flag independiente apagado por defecto y autorización explícita, integrar fachada sin reemplazar Event Bus v1; añadir prueba de configuración/rollback, métricas y chequeo de integridad en punto de uso antes de cualquier activación. H02-E/F y F4/G10-K siguen pendientes.
+
+## H02-D2A — Composición explícita de selección runtime (implementación preparada; certificación Fedora pendiente)
+
+- Se incorpora `SpecialistSelectionRuntime` como frontera explícita de composición entre H02-D1 y H02-C. La configuración confiable `aies.specialists.governed-selection.enabled` se interpreta estrictamente: ausente/`false` conserva legacy; sólo `true` opta por gobernanza. Valores ambiguos se rechazan.
+- El modo deshabilitado no abre ni crea SQLite; el modo habilitado usa `GovernedSpecialistSelector` y propaga fallos de base/integridad sin fallback silencioso. Una decisión de selección **no concede permiso de ejecución**.
+- `SpecialistSelectionRuntimeTest` verifica paridad legacy, default apagado, rechazo de configuración ambigua, ausencia de creación de base y fail-closed ante registro ausente.
+- Se añade el valor predeterminado apagado a `application.properties`, pero **esta clase aún no está inyectada en el consumidor productivo de Event Bus**. No declarar H02-D2 cerrado: la integración CDI/punto de uso, autenticación de operador, revalidación previa a despacho, métricas, sombra y rollback E2E son un siguiente incremento **H02-D2B**.
+- Validación en Fedora: `./gradlew :apps:control-plane:test --tests '*SpecialistSelectionRuntimeTest' --no-daemon --console=plain`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Registrar resultados reales.
+- Compatibilidad: Event Bus v1 intacto, ningún endpoint nuevo, selector v2 apagado por defecto, F4/G10-K OPEN.
