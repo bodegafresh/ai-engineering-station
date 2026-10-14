@@ -630,3 +630,35 @@ git diff --check
 ### Explicit limitations and G10-K
 - G10-J verifies *operator-supplied* process identity metadata and stable HTTP state. It is not a controlled JVM kill, cannot attest actual Quarkus configuration, and does not prove SQLite bytes are unchanged, a real Ollama model was called, event-loop latency, 429 saturation, or full end-to-end F4 acceptance.
 - G10-K must implement opt-in isolated subprocess orchestration with actual PID supervision and fail-closed crash points; instrument actual Ollama identity and timing at the adapter, demonstrate real 429/backpressure, and produce an operator-reviewable immutable certification bundle. No automatic replay of ambiguous POST/model invocations. **F4 remains OPEN.**
+
+## S0 — Specialists 2.0: especificación contractual (propuesta; F4 OPEN)
+
+### Decisiones confirmadas
+- Composición de perfiles y competencias; un especialista es un contrato de dominio, no un modelo ni una licencia profesional.
+- Catálogo inicial más propuestas de IA sujetas a aprobación humana; nunca autoactivación.
+- Coordinador dinámico que propone; motor determinista valida dependencias, presupuesto, elegibilidad y autorizaciones.
+- Autonomía por riesgo de la acción, con revisión y escalamiento según impacto. Roles no confieren permisos.
+
+### Artefactos S0 incorporados
+- `docs/architecture/ADR-S0-SPECIALISTS-2.0.md`: ADR-001 a ADR-005, amenazas, decisiones abiertas, migración y aceptación.
+- `docs/architecture/S0-S1-COMPATIBILITY-AND-PLAN.md`: matriz de compatibilidad v1, fases S1 y gates.
+- `docs/contracts/specialist-profile-v2.schema.json` y `docs/contracts/specialist-selection-v2.schema.json`: **esquemas propuestos**, no contratos runtime habilitados.
+- `docs/fixtures/specialists/`: cuatro especialistas legados, perfil válido y negativo de permiso implícito.
+- `scripts/s0-specialists-contract-tests.sh`: smoke determinista documental/fixtures (requiere jq); no sustituye validador JSON Schema ni suite Java.
+
+### Camino ajustado y dependencias
+1. **F4.3-G10-K sigue pendiente**: certificación real aislada Quarkus/Ollama y negativos; F4 permanece abierto. S0 no reemplaza ni cierra esta obligación.
+2. **S0 revisión de arquitectura**: aprobar ADR, canonicalización interoperable y vectores hash, scopes de operador, revocación en vuelo, revisión/cache y retención; confirmar esquemas y pruebas. S0 no altera runtime.
+3. **S1 registro gobernado**: SQLite durable, perfiles/capacidades versionados, aprobación/autorización, CAS, outbox, flag apagado por defecto, adaptador Event Bus v1 compatible, v2 opt-in y rollback por flag.
+4. **S2**: perfiles de modelos y evaluación de competencias, no incluidos en S1.
+5. **S3–S5**: metodologías ejecutables, equipos multidisciplinarios, auditoría por riesgo y evaluación continua. No habilitar capacidades legales/financieras de alto impacto sin fuentes, políticas y revisión profesional apropiadas.
+
+### Criterios de aceptación
+- S0-AC01..07 y S1-AC01..14 definidos en ADR. Los artefactos S0 se consideran **propuestos**, no aprobados ni certificados por el mero hecho de instalarse.
+- Validación local solicitada: `bash scripts/s0-specialists-contract-tests.sh`, `git diff --check`, `./gradlew clean test --no-daemon --console=plain`.
+- No se ha ejecutado Quarkus/Ollama ni la certificación G10-K por esta entrega. No afirmar que S1 está implementado.
+
+### Aprendizajes
+- `MethodologyRouter` puede reconocer documentación aunque el catálogo no ofrezca `documentation`: `BLOCKED_SPECIALIST` es un rechazo correcto; no inventar especialista ni alterar SQLite.
+- `PlanningPolicy` rechaza requisitos críticos con verificación `INSPECTION`; `NEEDS_CLARIFICATION` precede a selección.
+- G6 debe reconocer `NEEDS_CLARIFICATION`, `BLOCKED_SPECIALIST` y `BLOCKED_BUDGET` como estados de negocio no aprobatorios sin permitir importación; corrección operativa separada de S0.
