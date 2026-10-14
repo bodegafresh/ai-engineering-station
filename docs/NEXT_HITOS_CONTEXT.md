@@ -569,3 +569,29 @@ git diff --check
 ### Lessons
 - A successful HTTP fixture cannot prove SQLite fencing. Exercise the store through multiple independently opened connections and assert durable state after reopening.
 - Keep negative tests isolated from real operator data and distinguish simulated restart (connection reopen) from an actual process restart.
+
+## F4.3-G10-I — Deterministic durable negative recovery and material integrity (F4 OPEN)
+
+### Delivered
+- `F43G10IFailureInjectionTest` exercises the real execution SQLite store and communication journal in isolated `@TempDir` roots.
+- A test-only SQL clock injection forces an expired lease without waiting for wall-clock time. A late stale attempt cannot stage evidence, fail the successor, or unlock the DAG. A new attempt obtains a distinct token and durable attempts=2 after reopening.
+- When attempts are exhausted, an expired lease is not reclaimed. The task may remain LEASED with an expired token pending explicit recovery; this is **not** proof of automatic dead-lettering. Acceptance stays INCOMPLETE.
+- A rejected audit cannot complete a task; approved audit replay is idempotent, and conflicting replay is rejected. Only actual approved canonical evidence unlocks a dependent task.
+- Altering material bytes after artifact creation but before approval is rejected by SHA-256 verification. The task remains EVIDENCE_PENDING and dependencies stay blocked.
+
+### Required local verification
+```bash
+./gradlew :apps:control-plane:test --tests '*F43G10IFailureInjectionTest' --no-daemon --console=plain
+./gradlew :apps:control-plane:test --tests '*F43G10HExecutionSafetyTest' --tests '*F43G3TimeoutRecoveryTest' --no-daemon --console=plain
+./gradlew clean test --no-daemon --console=plain
+git diff --check
+```
+
+### Not yet certified — G10-J
+- These are deterministic component tests, **not** real JVM crash/restart, multi-process lock, production HTTP 429, real Ollama identity/timing or event-loop latency measurements.
+- G10-J should provide opt-in, isolated real-process Quarkus/Ollama certification with controlled crash boundaries, before/after restart snapshots, saturated real specialist capacity, operator-signoff and redacted immutable evidence. No automatic replay of ambiguous model invocations or approvals.
+- Keep F4 OPEN until the actual operator E2E and all negative requirements have been observed and signed off. No F5 yet.
+
+### Learning
+- Distinguish expired-lease fencing from automatic terminal-state recovery. Do not assert that an expired lease transitions to DEAD unless production logic does so.
+- Use independent persisted SQLite and actual file bytes for negative evidence; no simulated approved audit or modified production database.
