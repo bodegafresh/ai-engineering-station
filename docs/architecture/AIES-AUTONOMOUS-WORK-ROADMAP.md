@@ -258,3 +258,11 @@ Límites por `workId`: `maxTokens`, `maxModelCalls`, `maxWallClock`, `maxTasks`,
 - ADR-V3-007: límites del piloto single-node y criterios para SaaS.
 
 **Regla de gobierno del roadmap:** este documento define la dirección; `docs/NEXT_HITOS_CONTEXT.md` sigue siendo el registro cronológico de entregas, validaciones y próximo hito. No reescribir hitos históricos ni declarar implementado lo que aquí sólo está diseñado.
+
+## 14. Ampliación V3.2: Context Broker multimodal y conectores extensibles
+
+**Decisión de alcance (2026-10-15):** la etapa de comprender y la investigación en cualquier tarea podrán solicitar **contexto externo o interno** desde conectores heterogéneos, incluso si el modelo no puede leer directamente una web, archivo, Google Doc, repositorio, audio o video. AIES será responsable de validar permisos, recuperar contenido, procesarlo, conservar evidencia, resumirlo y enriquecer la interpretación mediante ciclos acotados. El modelo propone `ContextRequest`; no ejecuta acceso arbitrario ni otorga autorización.
+
+La especificación detallada y el análisis de fuentes `main` están en [`CONTEXT-ACQUISITION-ARCHITECTURE.md`](CONTEXT-ACQUISITION-ARCHITECTURE.md). Se incorpora como desarrollo del ADR-V3-003, **sin reemplazar** los contratos propuestos de las secciones 3, 6, 8 y 9. La distinción entre conectores de origen, procesadores de contenido y síntesis permite ampliar HTTP, storage, Google Docs/Drive, GitHub, APIs, bases de datos y medios audiovisuales sin acoplarlos al modelo. Los `ContextRequest` también pueden surgir de un nodo de ejecución, verificación o aprendizaje.
+
+**Ajuste de secuencia V3.2:** V3.2.0 broker+HTTP/local; V3.2.1 procesadores y storage; V3.2.2 integraciones; V3.2.3 audiovisual; V3.2.4 síntesis iterativa y recuperación bajo límites. Todos son objetivos **no implementados**. La prioridad inmediata H02-D2C2/C3, H02-E/F y certificación pendiente no cambia. Antes de codificar, ejecutar inventario de conectores, procesadores, scheduler y consumidores para maximizar reutilización y no eliminar rutas activas.
