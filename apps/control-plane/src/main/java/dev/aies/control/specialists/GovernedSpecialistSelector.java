@@ -25,11 +25,31 @@ public final class GovernedSpecialistSelector {
         this.enabled = enabled;
     }
 
+    /** H02-D2C2: verify a specific assignment at point of use; never choose a replacement.
+     * No tool grants exist in the worker path, so tool-requiring profiles are ineligible.
+     */
+    public boolean eligibleForDispatch(String specialistId, String capability) throws Exception {
+        if (!enabled) throw new SecurityException("Governed selection disabled");
+        // Read the entire registry with the same integrity checks as selection, but do not
+        // select the cheapest candidate: the previously assigned identity must still match.
+        return eligibleCandidates().stream().anyMatch(candidate ->
+            candidate.id().equals(specialistId)
+                && candidate.capabilities().contains(capability)
+                && candidate.requiredTools().isEmpty());
+    }
+
     /** Disabled mode never touches SQLite. Enabled mode fails closed on any integrity or I/O failure. */
     public SpecialistSelectionContract.Decision select(SpecialistSelectionContract.Request request) throws Exception {
         Objects.requireNonNull(request);
         if (!enabled) return SpecialistSelectionContract.Decision.rejected(
             SpecialistSelectionContract.Outcome.BLOCKED_SPECIALIST);
+        if (!Files.isRegularFile(database) || !Files.isReadable(database))
+            throw new SQLException("Governed registry unavailable");
+        return SpecialistSelectionContract.select(request, eligibleCandidates());
+    }
+
+    private List<SpecialistSelectionContract.Candidate> eligibleCandidates() throws Exception {
+        if (!enabled) throw new SecurityException("Governed selection disabled");
         if (!Files.isRegularFile(database) || !Files.isReadable(database))
             throw new SQLException("Governed registry unavailable");
         SQLiteConfig config = new SQLiteConfig();
@@ -70,6 +90,6 @@ public final class GovernedSpecialistSelector {
                     node.path("costUnits").asInt(), SpecialistSelectionContract.Source.GOVERNED_V2));
             }
         }
-        return SpecialistSelectionContract.select(request, List.copyOf(candidates));
+        return List.copyOf(candidates);
     }
 }

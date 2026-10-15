@@ -19,6 +19,7 @@ public final class ExecutionWorkerEngine {
     private final int maxAttempts;
     private final long leaseSeconds;
     private final int timeoutSeconds;
+    private dev.aies.control.specialists.GovernedSpecialistSelector dispatchGuard;
     public ExecutionWorkerEngine(Vertx vertx, ObjectMapper mapper, Path root, int maxAttempts,
                                  long leaseSeconds, int timeoutSeconds) {
         if (maxAttempts < 1 || maxAttempts > 20 || leaseSeconds < 10 || leaseSeconds > 3600 ||
@@ -26,6 +27,14 @@ public final class ExecutionWorkerEngine {
             throw new IllegalArgumentException("Timeout must be shorter than lease");
         this.vertx=vertx; this.mapper=mapper; this.root=root;
         this.maxAttempts=maxAttempts; this.leaseSeconds=leaseSeconds; this.timeoutSeconds=timeoutSeconds;
+        this.dispatchGuard=null;
+    }
+    /** Explicit governed mode: never infer permission from model input or a selection response. */
+    public ExecutionWorkerEngine(Vertx vertx, ObjectMapper mapper, Path root, int maxAttempts,
+                                 long leaseSeconds, int timeoutSeconds,
+                                 dev.aies.control.specialists.GovernedSpecialistSelector dispatchGuard) {
+        this(vertx,mapper,root,maxAttempts,leaseSeconds,timeoutSeconds);
+        this.dispatchGuard=java.util.Objects.requireNonNull(dispatchGuard);
     }
     public JsonObject runOne(String workflowId) throws Exception {
         ExecutionDispatchPolicy.id(workflowId);
@@ -38,6 +47,8 @@ public final class ExecutionWorkerEngine {
             task=ExecutionWorkerPolicy.task(store.plan(workflowId),work.taskId(),work.specialistId());
         }
         try {
+            if (dispatchGuard != null && !dispatchGuard.eligibleForDispatch(work.specialistId(), task.capability()))
+                throw new SecurityException("Governed assignment revoked or ineligible");
             ExecutionCapabilityAuthorization authorization;
             try(var store=handoff()) { authorization=store.authorization(workflowId,work.taskId()).orElse(null); }
             if (authorization != null) {

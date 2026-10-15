@@ -22,10 +22,18 @@ public class ExecutionWorkerEventBus {
     @ConfigProperty(name="aies.execution.max-attempts",defaultValue="3") int maxAttempts;
     @ConfigProperty(name="aies.execution.lease-seconds",defaultValue="60") long leaseSeconds;
     @ConfigProperty(name="aies.execution.worker.timeout-seconds",defaultValue="30") int timeoutSeconds;
+    @ConfigProperty(name="aies.specialists.governed-selection.enabled",defaultValue="false") String governedFlag;
+    @ConfigProperty(name="aies.specialists.governed-selection.database",defaultValue="./data/specialists.sqlite") String governedDatabase;
     private MessageConsumer<JsonObject> consumer;
     @PostConstruct void start() {
         if(!enabled)return;
-        var engine=new ExecutionWorkerEngine(vertx,mapper,java.nio.file.Path.of(root),maxAttempts,leaseSeconds,timeoutSeconds);
+        boolean governed = dev.aies.control.specialists.SpecialistSelectionRuntime
+            .fromConfiguration(governedFlag,java.nio.file.Path.of(governedDatabase),mapper).governedEnabled();
+        var engine = governed
+            ? new ExecutionWorkerEngine(vertx,mapper,java.nio.file.Path.of(root),maxAttempts,leaseSeconds,timeoutSeconds,
+                new dev.aies.control.specialists.GovernedSpecialistSelector(
+                    java.nio.file.Path.of(governedDatabase),mapper,true))
+            : new ExecutionWorkerEngine(vertx,mapper,java.nio.file.Path.of(root),maxAttempts,leaseSeconds,timeoutSeconds);
         consumer=vertx.eventBus().localConsumer(RUN_ONE,msg ->
             vertx.<JsonObject>executeBlocking(() -> engine.runOne(msg.body().getString("workflowId")),false)
                 .onSuccess(msg::reply).onFailure(e -> msg.fail(409,e.getClass().getSimpleName())));
