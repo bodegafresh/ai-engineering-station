@@ -47,8 +47,8 @@ public final class ExecutionWorkerEngine {
             task=ExecutionWorkerPolicy.task(store.plan(workflowId),work.taskId(),work.specialistId());
         }
         try {
-            if (dispatchGuard != null && !dispatchGuard.eligibleForDispatch(work.specialistId(), task.capability()))
-                throw new SecurityException("Governed assignment revoked or ineligible");
+            var governedSnapshot = dispatchGuard == null ? null
+                : dispatchGuard.snapshotForDispatch(work.specialistId(), task.capability());
             ExecutionCapabilityAuthorization authorization;
             try(var store=handoff()) { authorization=store.authorization(workflowId,work.taskId()).orElse(null); }
             if (authorization != null) {
@@ -83,6 +83,7 @@ public final class ExecutionWorkerEngine {
                 .put("specialistId",work.specialistId()).put("attemptId",work.leaseToken())
                 .put("objective",task.objective()).put("capability",task.capability())
                 .put("given",task.given()).put("when",task.when()).put("then",task.then());
+            if (governedSnapshot != null) request.put("governedSpecialistVersion", governedSnapshot.version());
             JsonObject response=vertx.eventBus().<JsonObject>request(EXECUTE,request,
                 new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
                 .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();

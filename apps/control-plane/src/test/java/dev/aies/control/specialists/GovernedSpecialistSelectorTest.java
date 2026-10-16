@@ -80,6 +80,29 @@ class GovernedSpecialistSelectorTest {
         }
         assertFalse(selector.eligibleForDispatch("documentation.specialist","documentation.technical.authoring"));
     }
+    @Test void snapshotRejectsRevocationAndVersionMismatch() throws Exception {
+        Path db=temp.resolve("snapshot.sqlite");
+        String manifest=MANIFEST.replace("[\"filesystem\"]", "[]");
+        String hash;
+        try(var store=new SpecialistRegistryStore(db,mapper)) { hash=store.propose(manifest).manifestSha256(); }
+        var actor=new SpecialistGovernanceService.Principal("human-operator",Set.of(
+            "specialists:validate","specialists:approve","specialists:activate","specialists:revoke"));
+        try(var governance=new SpecialistGovernanceService(db,mapper)) {
+            governance.transition("documentation.specialist","1.0.0",SpecialistGovernanceService.Action.VALIDATE,0,hash,actor);
+            governance.transition("documentation.specialist","1.0.0",SpecialistGovernanceService.Action.APPROVE,1,hash,actor);
+            governance.transition("documentation.specialist","1.0.0",SpecialistGovernanceService.Action.ACTIVATE,2,hash,actor);
+        }
+        var selector=new GovernedSpecialistSelector(db,mapper,true);
+        var snapshot=selector.snapshotForDispatch("documentation.specialist","documentation.technical.authoring");
+        assertEquals("1.0.0",snapshot.version());
+        assertDoesNotThrow(()->selector.verifySnapshot(snapshot));
+        assertThrows(SecurityException.class,()->selector.verifySnapshot(
+            new GovernedSpecialistSelector.AssignmentSnapshot(snapshot.specialistId(),"2.0.0",snapshot.capability())));
+        try(var governance=new SpecialistGovernanceService(db,mapper)) {
+            governance.transition("documentation.specialist","1.0.0",SpecialistGovernanceService.Action.REVOKE,3,hash,actor);
+        }
+        assertThrows(SecurityException.class,()->selector.verifySnapshot(snapshot));
+    }
     @Test void dispatchRejectsToolRequiringProfilesAndMissingRegistry() throws Exception {
         Path db=temp.resolve("tools.sqlite");
         String hash;

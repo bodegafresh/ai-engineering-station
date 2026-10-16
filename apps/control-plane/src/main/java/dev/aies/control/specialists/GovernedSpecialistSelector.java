@@ -38,6 +38,24 @@ public final class GovernedSpecialistSelector {
                 && candidate.requiredTools().isEmpty());
     }
 
+    /** Immutable assignment evidence. This is NOT an execution grant. */
+    public record AssignmentSnapshot(String specialistId, String version, String capability) {}
+
+    public AssignmentSnapshot snapshotForDispatch(String specialistId, String capability) throws Exception {
+        if (!enabled) throw new SecurityException("Governed selection disabled");
+        var matches = eligibleCandidates().stream().filter(candidate ->
+            candidate.id().equals(specialistId) && candidate.capabilities().contains(capability)
+                && candidate.requiredTools().isEmpty()).toList();
+        if (matches.size() != 1) throw new SecurityException("Ambiguous or ineligible governed assignment");
+        return new AssignmentSnapshot(specialistId, matches.get(0).version(), capability);
+    }
+
+    /** Re-read registry at the final consumer boundary, reject version drift/revocation. */
+    public void verifySnapshot(AssignmentSnapshot snapshot) throws Exception {
+        if (!snapshotForDispatch(snapshot.specialistId(), snapshot.capability()).equals(snapshot))
+            throw new SecurityException("Governed specialist assignment changed");
+    }
+
     /** Disabled mode never touches SQLite. Enabled mode fails closed on any integrity or I/O failure. */
     public SpecialistSelectionContract.Decision select(SpecialistSelectionContract.Request request) throws Exception {
         Objects.requireNonNull(request);
