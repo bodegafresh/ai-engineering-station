@@ -58,6 +58,11 @@ public final class ExecutionWorkerEngine {
                     .put("taskId",work.taskId()).put("attemptId",work.leaseToken())
                     .put("approved",true).put("sourcePath",authorization.sourcePath())
                     .put("approvedSourceSha256",authorization.sourceSha256());
+                if (governedSnapshot != null) {
+                    docRequest.put("governedSpecialistId", governedSnapshot.specialistId())
+                        .put("governedSpecialistVersion", governedSnapshot.version())
+                        .put("governedCapability", governedSnapshot.capability());
+                }
                 JsonObject generated=vertx.eventBus().<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
                     docRequest,new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
                     .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();
