@@ -31,6 +31,13 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             // silently issuing a second external model request.
             s.execute("CREATE TABLE IF NOT EXISTS execution_model_invocations(workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL,started_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id))");
             s.execute("CREATE TABLE IF NOT EXISTS execution_capability_authorizations(workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, capability TEXT NOT NULL, source_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(workflow_id,task_id), FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
+            // H02-D2C2d: immutable identity bound to the actual leased attempt.
+            // The lease is still checked at each consumer boundary; this row is evidence, not a grant.
+            s.execute("CREATE TABLE IF NOT EXISTS execution_governed_attempts(" +
+                "workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL," +
+                "specialist_id TEXT NOT NULL,specialist_version TEXT NOT NULL,capability TEXT NOT NULL," +
+                "bound_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id)," +
+                "FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
             try (var columns = db.createStatement().executeQuery("PRAGMA table_info(execution_tasks)")) {
@@ -121,6 +128,75 @@ public final class ExecutionHandoffStore implements AutoCloseable {
     private void rollbackClaimTransaction() throws SQLException {
         try (var statement = db.createStatement()) { statement.execute("ROLLBACK"); }
     }
+    /** An immutable, per-lease governed identity; it is not an execution permission. */
+    public record GovernedAttempt(String workflowId, String taskId, String attemptId,
+                                  String specialistId, String version, String capability) {}
+
+    /** Bind only the currently live lease. A retry must not silently upgrade a specialist version. */
+    public synchronized boolean bindGovernedAttempt(GovernedAttempt a) throws Exception {
+        Objects.requireNonNull(a);
+        dev.aies.control.communication.CommunicationContracts.id(a.workflowId());
+        dev.aies.control.communication.CommunicationContracts.id(a.taskId());
+        dev.aies.control.communication.CommunicationContracts.id(a.attemptId());
+        dev.aies.control.communication.CommunicationContracts.id(a.specialistId());
+        if (a.version() == null || a.version().isBlank() || a.version().length() > 128 ||
+            a.capability() == null || a.capability().isBlank() || a.capability().length() > 128)
+            throw new SecurityException("Invalid governed identity");
+        try (var tx=db.createStatement()) { tx.execute("BEGIN IMMEDIATE"); }
+        try {
+            // Version changes between attempts require explicit operator re-planning.
+            try (var p=db.prepareStatement("SELECT specialist_id,specialist_version,capability FROM execution_governed_attempts WHERE workflow_id=? AND task_id=?")) {
+                p.setString(1,a.workflowId());p.setString(2,a.taskId());
+                try (var rs=p.executeQuery()) {
+                    while(rs.next()) if (!a.specialistId().equals(rs.getString(1)) ||
+                        !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)))
+                        throw new SecurityException("Governed identity changed between attempts");
+                }
+            }
+            try (var p=db.prepareStatement("INSERT OR IGNORE INTO execution_governed_attempts(" +
+                    "workflow_id,task_id,attempt_id,specialist_id,specialist_version,capability,bound_at) " +
+                    "SELECT workflow_id,task_id,lease_token,specialist_id,?,?,? FROM execution_tasks " +
+                    "WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>? AND specialist_id=?")) {
+                p.setString(1,a.version());p.setString(2,a.capability());p.setString(3,Instant.now().toString());
+                p.setString(4,a.workflowId());p.setString(5,a.taskId());p.setString(6,a.attemptId());
+                p.setString(7,Instant.now().toString());p.setString(8,a.specialistId());
+                p.executeUpdate();
+            }
+            // Both new inserts and exact idempotent replays require an active lease.
+            requireGovernedAttempt(a);
+            commitClaimTransaction();
+            return true;
+        } catch (Exception e) { rollbackClaimTransaction(); throw e; }
+    }
+
+    /** Never downgrade a task that has governed history into legacy execution. */
+    public synchronized void requireNoGovernedHistory(String workflowId, String taskId) throws Exception {
+        try (var p=db.prepareStatement("SELECT 1 FROM execution_governed_attempts WHERE workflow_id=? AND task_id=? LIMIT 1")) {
+            p.setString(1,workflowId);p.setString(2,taskId);
+            try (var rs=p.executeQuery()) {
+                if (rs.next()) throw new SecurityException("Governed task cannot downgrade to legacy");
+            }
+        }
+    }
+
+    /** Consumer-side check: durable identity, current lease and attempt must all match. */
+    public synchronized void requireGovernedAttempt(GovernedAttempt a) throws Exception {
+        Objects.requireNonNull(a);
+        try (var p=db.prepareStatement("SELECT g.specialist_id,g.specialist_version,g.capability " +
+                "FROM execution_governed_attempts g JOIN execution_tasks t " +
+                "ON g.workflow_id=t.workflow_id AND g.task_id=t.task_id " +
+                "WHERE g.workflow_id=? AND g.task_id=? AND g.attempt_id=? " +
+                "AND t.status='LEASED' AND t.lease_token=? AND t.lease_until>?")) {
+            p.setString(1,a.workflowId());p.setString(2,a.taskId());p.setString(3,a.attemptId());
+            p.setString(4,a.attemptId());p.setString(5,Instant.now().toString());
+            try (var rs=p.executeQuery()) {
+                if (!rs.next() || !a.specialistId().equals(rs.getString(1)) ||
+                    !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)))
+                    throw new SecurityException("Missing, expired or mismatched governed attempt");
+            }
+        }
+    }
+
     /** Durable, immutable operator authorization for one task. Replays with different inputs fail closed. */
     public synchronized boolean authorizeCapability(ExecutionCapabilityAuthorization a) throws Exception {
         Objects.requireNonNull(a);
