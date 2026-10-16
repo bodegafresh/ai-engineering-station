@@ -12,7 +12,8 @@ final class GovernedDocumentationGuard {
         if (request == null) throw new SecurityException("Missing documentation request");
         if (guard == null) {
             if (request.containsKey("governedSpecialistId") || request.containsKey("governedSpecialistVersion")
-                || request.containsKey("governedCapability"))
+                || request.containsKey("governedCapability") || request.containsKey("governedManifestSha256") ||
+                request.containsKey("governedRegistryRevision"))
                 throw new SecurityException("Governed assignment while governance disabled");
             return null;
         }
@@ -22,7 +23,8 @@ final class GovernedDocumentationGuard {
         if (!"software-engineer".equals(id) || !"software".equals(capability)
             || version == null || version.isBlank() || version.length() > 128)
             throw new SecurityException("Missing or invalid governed documentation identity");
-        var snapshot = new GovernedSpecialistSelector.AssignmentSnapshot(id, version, capability);
+        var snapshot = new GovernedSpecialistSelector.AssignmentSnapshot(id, version, capability,
+            request.getString("governedManifestSha256"), request.getLong("governedRegistryRevision", -1L));
         guard.verifySnapshot(snapshot);
         return snapshot;
     }

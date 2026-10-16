@@ -52,14 +52,17 @@ public class RealSpecialistEventBus {
                             if (id == null || capability == null || version == null || version.isBlank())
                                 throw new SecurityException("Missing governed assignment identity");
                             guard.verifySnapshot(new dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot(
-                                id, version, capability));
+                                id, version, capability, request.getString("governedManifestSha256"),
+                                request.getLong("governedRegistryRevision", -1L)));
                             try (var store = new ExecutionHandoffStore(
                                 Path.of(dataRoot).resolve("execution-handoff.sqlite"), mapper)) {
                                 store.requireGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
                                     request.getString("workflowId"), request.getString("taskId"),
-                                    request.getString("attemptId"), id, version, capability));
+                                    request.getString("attemptId"), id, version, capability, request.getString("governedManifestSha256"),
+                                request.getLong("governedRegistryRevision", -1L)));
                             }
-                        } else if (request.containsKey("governedSpecialistVersion")) {
+                        } else if (request.containsKey("governedSpecialistVersion") ||
+                                 request.containsKey("governedManifestSha256") || request.containsKey("governedRegistryRevision")) {
                             throw new SecurityException("Governed assignment supplied while governance disabled");
                         }
                         return executor.execute(request);

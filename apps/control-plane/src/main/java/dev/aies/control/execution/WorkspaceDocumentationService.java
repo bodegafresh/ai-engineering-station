@@ -26,7 +26,8 @@ public final class WorkspaceDocumentationService {
             try (var store = handoff()) {
                 store.requireGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
                     workflowId, taskId, attemptId, governedSnapshot.specialistId(),
-                    governedSnapshot.version(), governedSnapshot.capability()));
+                    governedSnapshot.version(), governedSnapshot.capability(),
+                    governedSnapshot.manifestSha256(), governedSnapshot.registryRevision()));
             }
         }
     }

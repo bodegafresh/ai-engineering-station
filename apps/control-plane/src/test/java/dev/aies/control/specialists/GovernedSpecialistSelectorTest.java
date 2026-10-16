@@ -96,6 +96,14 @@ class GovernedSpecialistSelectorTest {
         var snapshot=selector.snapshotForDispatch("documentation.specialist","documentation.technical.authoring");
         assertEquals("1.0.0",snapshot.version());
         assertDoesNotThrow(()->selector.verifySnapshot(snapshot));
+        assertEquals(hash, snapshot.manifestSha256());
+        assertTrue(snapshot.registryRevision() >= 0);
+        assertThrows(SecurityException.class, ()->selector.verifySnapshot(
+            new GovernedSpecialistSelector.AssignmentSnapshot(snapshot.specialistId(),snapshot.version(),
+                snapshot.capability(),snapshot.manifestSha256(),snapshot.registryRevision()+1)));
+        assertThrows(SecurityException.class, ()->selector.verifySnapshot(
+            new GovernedSpecialistSelector.AssignmentSnapshot(snapshot.specialistId(),snapshot.version(),
+                snapshot.capability(),"b".repeat(64),snapshot.registryRevision())));
         assertThrows(SecurityException.class,()->selector.verifySnapshot(
             new GovernedSpecialistSelector.AssignmentSnapshot(snapshot.specialistId(),"2.0.0",snapshot.capability())));
         try(var governance=new SpecialistGovernanceService(db,mapper)) {
