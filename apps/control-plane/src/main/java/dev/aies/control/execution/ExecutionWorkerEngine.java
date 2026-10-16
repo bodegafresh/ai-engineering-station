@@ -58,7 +58,8 @@ public final class ExecutionWorkerEngine {
                 try (var store = handoff()) {
                     store.bindGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
                         workflowId, work.taskId(), work.leaseToken(), governedSnapshot.specialistId(),
-                        governedSnapshot.version(), governedSnapshot.capability()));
+                        governedSnapshot.version(), governedSnapshot.capability(),
+                        governedSnapshot.manifestSha256(), governedSnapshot.registryRevision()));
                 }
             }
             ExecutionCapabilityAuthorization authorization;
@@ -73,7 +74,9 @@ public final class ExecutionWorkerEngine {
                 if (governedSnapshot != null) {
                     docRequest.put("governedSpecialistId", governedSnapshot.specialistId())
                         .put("governedSpecialistVersion", governedSnapshot.version())
-                        .put("governedCapability", governedSnapshot.capability());
+                        .put("governedCapability", governedSnapshot.capability())
+                        .put("governedManifestSha256", governedSnapshot.manifestSha256())
+                        .put("governedRegistryRevision", governedSnapshot.registryRevision());
                 }
                 JsonObject generated=vertx.eventBus().<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
                     docRequest,new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
@@ -100,7 +103,9 @@ public final class ExecutionWorkerEngine {
                 .put("specialistId",work.specialistId()).put("attemptId",work.leaseToken())
                 .put("objective",task.objective()).put("capability",task.capability())
                 .put("given",task.given()).put("when",task.when()).put("then",task.then());
-            if (governedSnapshot != null) request.put("governedSpecialistVersion", governedSnapshot.version());
+            if (governedSnapshot != null) request.put("governedSpecialistVersion", governedSnapshot.version())
+                .put("governedManifestSha256", governedSnapshot.manifestSha256())
+                .put("governedRegistryRevision", governedSnapshot.registryRevision());
             JsonObject response=vertx.eventBus().<JsonObject>request(EXECUTE,request,
                 new DeliveryOptions().setSendTimeout(timeoutSeconds*1000L))
                 .toCompletionStage().toCompletableFuture().get(timeoutSeconds+2L,TimeUnit.SECONDS).body();

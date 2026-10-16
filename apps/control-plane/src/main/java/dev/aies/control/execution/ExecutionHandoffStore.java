@@ -38,6 +38,15 @@ public final class ExecutionHandoffStore implements AutoCloseable {
                 "specialist_id TEXT NOT NULL,specialist_version TEXT NOT NULL,capability TEXT NOT NULL," +
                 "bound_at TEXT NOT NULL,PRIMARY KEY(workflow_id,task_id,attempt_id)," +
                 "FOREIGN KEY(workflow_id,task_id) REFERENCES execution_tasks(workflow_id,task_id))");
+            // Additive nullable columns: historical attempts without fingerprints fail closed.
+            for (String col : List.of("manifest_sha256 TEXT", "registry_revision INTEGER")) {
+                String name = col.split(" ")[0];
+                boolean exists = false;
+                try (var check = db.createStatement(); var rs = check.executeQuery("PRAGMA table_info(execution_governed_attempts)")) {
+                    while (rs.next()) if (name.equals(rs.getString("name"))) exists = true;
+                }
+                if (!exists) s.execute("ALTER TABLE execution_governed_attempts ADD COLUMN " + col);
+            }
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
             try (var columns = db.createStatement().executeQuery("PRAGMA table_info(execution_tasks)")) {
@@ -130,7 +139,13 @@ public final class ExecutionHandoffStore implements AutoCloseable {
     }
     /** An immutable, per-lease governed identity; it is not an execution permission. */
     public record GovernedAttempt(String workflowId, String taskId, String attemptId,
-                                  String specialistId, String version, String capability) {}
+                                  String specialistId, String version, String capability,
+                                  String manifestSha256, long registryRevision) {
+        public GovernedAttempt(String workflowId, String taskId, String attemptId,
+                               String specialistId, String version, String capability) {
+            this(workflowId, taskId, attemptId, specialistId, version, capability, null, -1);
+        }
+    }
 
     /** Bind only the currently live lease. A retry must not silently upgrade a specialist version. */
     public synchronized boolean bindGovernedAttempt(GovernedAttempt a) throws Exception {
@@ -142,24 +157,28 @@ public final class ExecutionHandoffStore implements AutoCloseable {
         if (a.version() == null || a.version().isBlank() || a.version().length() > 128 ||
             a.capability() == null || a.capability().isBlank() || a.capability().length() > 128)
             throw new SecurityException("Invalid governed identity");
+        if (a.manifestSha256() == null || !a.manifestSha256().matches("[0-9a-f]{64}") || a.registryRevision() < 0)
+            throw new SecurityException("Missing governed manifest fingerprint or revision");
         try (var tx=db.createStatement()) { tx.execute("BEGIN IMMEDIATE"); }
         try {
             // Version changes between attempts require explicit operator re-planning.
-            try (var p=db.prepareStatement("SELECT specialist_id,specialist_version,capability FROM execution_governed_attempts WHERE workflow_id=? AND task_id=?")) {
+            try (var p=db.prepareStatement("SELECT specialist_id,specialist_version,capability,manifest_sha256,registry_revision FROM execution_governed_attempts WHERE workflow_id=? AND task_id=?")) {
                 p.setString(1,a.workflowId());p.setString(2,a.taskId());
                 try (var rs=p.executeQuery()) {
                     while(rs.next()) if (!a.specialistId().equals(rs.getString(1)) ||
-                        !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)))
+                        !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)) ||
+                        !a.manifestSha256().equals(rs.getString(4)) || a.registryRevision() != rs.getLong(5) || rs.wasNull())
                         throw new SecurityException("Governed identity changed between attempts");
                 }
             }
             try (var p=db.prepareStatement("INSERT OR IGNORE INTO execution_governed_attempts(" +
-                    "workflow_id,task_id,attempt_id,specialist_id,specialist_version,capability,bound_at) " +
-                    "SELECT workflow_id,task_id,lease_token,specialist_id,?,?,? FROM execution_tasks " +
+                    "workflow_id,task_id,attempt_id,specialist_id,specialist_version,capability,bound_at,manifest_sha256,registry_revision) " +
+                    "SELECT workflow_id,task_id,lease_token,specialist_id,?,?,?,?,? FROM execution_tasks " +
                     "WHERE workflow_id=? AND task_id=? AND status='LEASED' AND lease_token=? AND lease_until>? AND specialist_id=?")) {
                 p.setString(1,a.version());p.setString(2,a.capability());p.setString(3,Instant.now().toString());
-                p.setString(4,a.workflowId());p.setString(5,a.taskId());p.setString(6,a.attemptId());
-                p.setString(7,Instant.now().toString());p.setString(8,a.specialistId());
+                p.setString(4,a.manifestSha256());p.setLong(5,a.registryRevision());
+                p.setString(6,a.workflowId());p.setString(7,a.taskId());p.setString(8,a.attemptId());
+                p.setString(9,Instant.now().toString());p.setString(10,a.specialistId());
                 p.executeUpdate();
             }
             // Both new inserts and exact idempotent replays require an active lease.
@@ -182,7 +201,7 @@ public final class ExecutionHandoffStore implements AutoCloseable {
     /** Consumer-side check: durable identity, current lease and attempt must all match. */
     public synchronized void requireGovernedAttempt(GovernedAttempt a) throws Exception {
         Objects.requireNonNull(a);
-        try (var p=db.prepareStatement("SELECT g.specialist_id,g.specialist_version,g.capability " +
+        try (var p=db.prepareStatement("SELECT g.specialist_id,g.specialist_version,g.capability,g.manifest_sha256,g.registry_revision " +
                 "FROM execution_governed_attempts g JOIN execution_tasks t " +
                 "ON g.workflow_id=t.workflow_id AND g.task_id=t.task_id " +
                 "WHERE g.workflow_id=? AND g.task_id=? AND g.attempt_id=? " +
@@ -191,7 +210,9 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             p.setString(4,a.attemptId());p.setString(5,Instant.now().toString());
             try (var rs=p.executeQuery()) {
                 if (!rs.next() || !a.specialistId().equals(rs.getString(1)) ||
-                    !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)))
+                    !a.version().equals(rs.getString(2)) || !a.capability().equals(rs.getString(3)) ||
+                    a.manifestSha256() == null || !a.manifestSha256().equals(rs.getString(4)) ||
+                    a.registryRevision() < 0 || a.registryRevision() != rs.getLong(5) || rs.wasNull())
                     throw new SecurityException("Missing, expired or mismatched governed attempt");
             }
         }

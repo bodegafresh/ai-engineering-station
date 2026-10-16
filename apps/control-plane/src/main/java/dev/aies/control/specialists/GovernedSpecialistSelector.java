@@ -39,7 +39,13 @@ public final class GovernedSpecialistSelector {
     }
 
     /** Immutable assignment evidence. This is NOT an execution grant. */
-    public record AssignmentSnapshot(String specialistId, String version, String capability) {}
+    public record AssignmentSnapshot(String specialistId, String version, String capability,
+                                     String manifestSha256, long registryRevision) {
+        /** Historical constructor is deliberately non-authorizing: verification will reject it. */
+        public AssignmentSnapshot(String specialistId, String version, String capability) {
+            this(specialistId, version, capability, null, -1);
+        }
+    }
 
     public AssignmentSnapshot snapshotForDispatch(String specialistId, String capability) throws Exception {
         if (!enabled) throw new SecurityException("Governed selection disabled");
@@ -47,7 +53,34 @@ public final class GovernedSpecialistSelector {
             candidate.id().equals(specialistId) && candidate.capabilities().contains(capability)
                 && candidate.requiredTools().isEmpty()).toList();
         if (matches.size() != 1) throw new SecurityException("Ambiguous or ineligible governed assignment");
-        return new AssignmentSnapshot(specialistId, matches.get(0).version(), capability);
+        var version = matches.get(0).version();
+        // The fingerprint must come from the same verified registry snapshot as selection.
+        return fingerprint(specialistId, version, capability);
+    }
+
+    private AssignmentSnapshot fingerprint(String id, String version, String capability) throws Exception {
+        SQLiteConfig config = new SQLiteConfig();
+        config.setReadOnly(true);
+        try (var db = DriverManager.getConnection("jdbc:sqlite:" + database, config.toProperties());
+             var query = db.prepareStatement("SELECT manifest_sha256,revision,status,manifest_json FROM specialist_registry_profiles WHERE id=? AND version=?")) {
+            query.setString(1, id); query.setString(2, version);
+            try (var rows = query.executeQuery()) {
+                if (!rows.next() || !"ACTIVE".equals(rows.getString("status")))
+                    throw new SecurityException("Governed profile no longer active");
+                var verified = SpecialistRegistryManifest.validate(mapper, rows.getString("manifest_json"));
+                String digest = rows.getString("manifest_sha256");
+                long revision = rows.getLong("revision");
+                var node = mapper.readTree(rows.getString("manifest_json"));
+                boolean hasCapability = false;
+                for (var competency : node.path("competencies"))
+                    if (capability.equals(competency.path("capabilityId").asText())) hasCapability = true;
+                if (!verified.id().equals(id) || !verified.version().equals(version) ||
+                    !verified.sha256().equals(digest) || revision < 0 || !hasCapability ||
+                    node.path("requiredTools").size() != 0)
+                    throw new SecurityException("Governed fingerprint invalid or no longer eligible");
+                return new AssignmentSnapshot(id, version, capability, digest, revision);
+            }
+        }
     }
 
     /** Re-read registry at the final consumer boundary, reject version drift/revocation. */

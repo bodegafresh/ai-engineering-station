@@ -12,7 +12,7 @@ class ExecutionGovernedAttemptTest {
     @TempDir Path dir;
     private ExecutionHandoffStore.GovernedAttempt attempt(String token, String version) {
         return new ExecutionHandoffStore.GovernedAttempt("wf-execution", "a", token,
-            "software-engineer", version, "software");
+            "software-engineer", version, "software", "a".repeat(64), 7);
     }
 
     @Test void persistsIdentityAndRejectsForgedOrMissingLeaseAfterRestart() throws Exception {
@@ -47,6 +47,21 @@ class ExecutionGovernedAttemptTest {
             assertNotEquals(first,second);
             assertThrows(SecurityException.class,()->store.bindGovernedAttempt(attempt(second,"2.0")));
             assertDoesNotThrow(()->store.bindGovernedAttempt(attempt(second,"1.0")));
+        }
+    }
+
+    @Test void missingFingerprintAndRevisionFailClosed() throws Exception {
+        Path file=dir.resolve("missing-fingerprint.sqlite");
+        try(var store=new ExecutionHandoffStore(file,new ObjectMapper())) {
+            store.importPlan(ExecutionGraphTest.plan(ExecutionGraphTest.task("a")));
+            String token=store.claim("wf-execution",3,60).orElseThrow().leaseToken();
+            assertThrows(SecurityException.class, ()->store.bindGovernedAttempt(
+                new ExecutionHandoffStore.GovernedAttempt("wf-execution","a",token,"software-engineer","1.0","software")));
+            store.bindGovernedAttempt(attempt(token,"1.0"));
+            assertThrows(SecurityException.class, ()->store.requireGovernedAttempt(
+                new ExecutionHandoffStore.GovernedAttempt("wf-execution","a",token,"software-engineer","1.0","software","b".repeat(64),7)));
+            assertThrows(SecurityException.class, ()->store.requireGovernedAttempt(
+                new ExecutionHandoffStore.GovernedAttempt("wf-execution","a",token,"software-engineer","1.0","software","a".repeat(64),8)));
         }
     }
 
