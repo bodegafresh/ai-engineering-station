@@ -20,8 +20,15 @@ public final class WorkspaceDocumentationService {
     private final dev.aies.control.specialists.GovernedSpecialistSelector governedGuard;
     private final dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot governedSnapshot;
 
-    private void revalidateGoverned() throws Exception {
-        if (governedGuard != null) governedGuard.verifySnapshot(governedSnapshot);
+    private void revalidateGoverned(String workflowId, String taskId, String attemptId) throws Exception {
+        if (governedGuard != null) {
+            governedGuard.verifySnapshot(governedSnapshot);
+            try (var store = handoff()) {
+                store.requireGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
+                    workflowId, taskId, attemptId, governedSnapshot.specialistId(),
+                    governedSnapshot.version(), governedSnapshot.capability()));
+            }
+        }
     }
 
 
@@ -68,7 +75,7 @@ public final class WorkspaceDocumentationService {
         String approvedSourceSha = input.getString("approvedSourceSha256");
         if (approvedSourceSha == null || !sourceSha.equals(approvedSourceSha))
             throw new SecurityException("Source changed since authorization");
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         // Fence before any model request and replay durable artifacts for the same live attempt.
         try (var store = handoff()) {
             store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);
@@ -104,20 +111,20 @@ public final class WorkspaceDocumentationService {
             .put("attemptId", attemptId).put("specialistId", "software-engineer")
             .put("capability", "software").put("objective", objective);
         try(var store=handoff()) {store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);}
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         // Atomic durable reservation: concurrent Event Bus deliveries must not invoke
         // the model twice for the same attempt. A crash after reservation is ambiguous.
         try(var store=handoff()) {
             if(!store.reserveModelInvocation(workflowId,taskId,attemptId,sourcePath,sourceSha))
                 throw new IllegalStateException("Model invocation already reserved; reconcile before retry");
         }
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         var response = model.execute(request);
         if (!attemptId.equals(response.getString("attemptId"))) throw new SecurityException("Attempt mismatch");
         String markdown = response.getString("content");
         if (markdown == null || markdown.isBlank() || markdown.length() > 131072) throw new IllegalStateException("Invalid document");
         try(var store=handoff()) {store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);}
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         // Do not allow symlink-based writes in the reserved output tree.
         Path aies = root.resolve(".aies");
         if (Files.exists(aies, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(aies) || !Files.isDirectory(aies)))
@@ -149,7 +156,7 @@ public final class WorkspaceDocumentationService {
         try (var communication = new CommunicationStore(dataRoot.resolve("communication.sqlite"), mapper)) {
             artifactId = communication.appendIdempotent("execution-"+attemptId+"-artifact", "ARTIFACT", workflowId, taskId, artifact).id();
         }
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"ARTIFACT_RECORDED",artifactId,root.relativize(output).toString(),documentSha);}
         return new JsonObject().put("status", "EVIDENCE_PENDING").put("workflowId", workflowId)
             .put("taskId", taskId).put("attemptId", attemptId).put("sourcePath", root.relativize(realSource).toString())
@@ -161,7 +168,7 @@ public final class WorkspaceDocumentationService {
         return new ExecutionHandoffStore(dataRoot.resolve("execution-handoff.sqlite"),mapper);
     }
     private JsonObject recoverWritten(String workflowId,String taskId,String attemptId,String sourcePath,String sourceSha,Path output) throws Exception {
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         if(Files.isSymbolicLink(output) || !output.toRealPath().startsWith(root))throw new SecurityException("Unsafe recovery file");
         var bytes=Files.readAllBytes(output);
         if(bytes.length==0 || bytes.length>131072)throw new SecurityException("Invalid recovery content");
@@ -179,7 +186,7 @@ public final class WorkspaceDocumentationService {
         try(var communication=new CommunicationStore(dataRoot.resolve("communication.sqlite"),mapper)) {
             artifactId=communication.appendIdempotent("execution-"+attemptId+"-artifact", "ARTIFACT",workflowId,taskId,artifact).id();
         }
-        revalidateGoverned();
+        revalidateGoverned(workflowId,taskId,attemptId);
         try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"ARTIFACT_RECORDED",artifactId,root.relativize(output).toString(),documentSha);}
         return new JsonObject().put("status","EVIDENCE_PENDING").put("workflowId",workflowId)
             .put("taskId",taskId).put("attemptId",attemptId).put("sourcePath",sourcePath)

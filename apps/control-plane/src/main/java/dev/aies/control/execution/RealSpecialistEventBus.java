@@ -25,6 +25,7 @@ public class RealSpecialistEventBus {
     @ConfigProperty(name="aies.execution.real-specialist.max-concurrent", defaultValue="2") int maxConcurrent;
     @ConfigProperty(name="aies.specialists.governed-selection.enabled",defaultValue="false") String governedFlag;
     @ConfigProperty(name="aies.specialists.governed-selection.database",defaultValue="./data/specialists.sqlite") String governedDatabase;
+    @ConfigProperty(name="aies.agent-communications.data-root",defaultValue="./data/agent-communications") String dataRoot;
     private MessageConsumer<JsonObject> consumer;
     @PostConstruct void start() {
         if (!enabled) return;
@@ -52,6 +53,12 @@ public class RealSpecialistEventBus {
                                 throw new SecurityException("Missing governed assignment identity");
                             guard.verifySnapshot(new dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot(
                                 id, version, capability));
+                            try (var store = new ExecutionHandoffStore(
+                                Path.of(dataRoot).resolve("execution-handoff.sqlite"), mapper)) {
+                                store.requireGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
+                                    request.getString("workflowId"), request.getString("taskId"),
+                                    request.getString("attemptId"), id, version, capability));
+                            }
                         } else if (request.containsKey("governedSpecialistVersion")) {
                             throw new SecurityException("Governed assignment supplied while governance disabled");
                         }

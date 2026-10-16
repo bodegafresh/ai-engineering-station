@@ -49,6 +49,18 @@ public final class ExecutionWorkerEngine {
         try {
             var governedSnapshot = dispatchGuard == null ? null
                 : dispatchGuard.snapshotForDispatch(work.specialistId(), task.capability());
+            if (governedSnapshot == null) {
+                try (var store = handoff()) {
+                    store.requireNoGovernedHistory(workflowId, work.taskId());
+                }
+            }
+            if (governedSnapshot != null) {
+                try (var store = handoff()) {
+                    store.bindGovernedAttempt(new ExecutionHandoffStore.GovernedAttempt(
+                        workflowId, work.taskId(), work.leaseToken(), governedSnapshot.specialistId(),
+                        governedSnapshot.version(), governedSnapshot.capability()));
+                }
+            }
             ExecutionCapabilityAuthorization authorization;
             try(var store=handoff()) { authorization=store.authorization(workflowId,work.taskId()).orElse(null); }
             if (authorization != null) {
