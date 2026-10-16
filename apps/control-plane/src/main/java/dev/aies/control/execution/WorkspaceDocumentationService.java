@@ -20,6 +20,25 @@ public final class WorkspaceDocumentationService {
     private final dev.aies.control.specialists.GovernedSpecialistSelector governedGuard;
     private final dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot governedSnapshot;
 
+    /** H02-D2C2f.3: trusted server-derived tool/action/resource; Event Bus never supplies grants. */
+    private void authorizeGovernedTool(String workflowId, String taskId, String attemptId,
+                                       String tool, String action, String resource) throws Exception {
+        if (governedGuard == null) return; // frozen legacy execution path
+        revalidateGoverned(workflowId, taskId, attemptId);
+        var request = new GovernedToolResourcePolicy.Request(workflowId, taskId, attemptId,
+            governedSnapshot.specialistId(), governedSnapshot.version(), tool, action, resource);
+        // The policy revision is read from the immutable per-attempt operator-owned policy.
+        // This is not a caller-supplied revision or a substitute for approval provenance.
+        try (var policy = new GovernedToolResourcePolicyStore(
+                dataRoot.resolve("governed-tool-policies.sqlite"));
+             var execution = handoff()) {
+            policy.requireAuthorizedCurrent(execution, new ExecutionHandoffStore.GovernedAttempt(
+                workflowId, taskId, attemptId, governedSnapshot.specialistId(),
+                governedSnapshot.version(), governedSnapshot.capability(),
+                governedSnapshot.manifestSha256(), governedSnapshot.registryRevision()), request);
+        }
+    }
+
     private void revalidateGoverned(String workflowId, String taskId, String attemptId) throws Exception {
         if (governedGuard != null) {
             governedGuard.verifySnapshot(governedSnapshot);
@@ -70,6 +89,9 @@ public final class WorkspaceDocumentationService {
         Path realSource = source.toRealPath();
         if (!realSource.startsWith(root)) throw new SecurityException("Source escapes workspace");
         if (Files.size(realSource) > 32_768) throw new IllegalArgumentException("Source too large");
+        // A governed attempt cannot read source before an exact operator-owned grant.
+        authorizeGovernedTool(workflowId, taskId, attemptId,
+            "workspace-documentation", "read-source", root.relativize(realSource).toString());
         String javaSource = Files.readString(realSource, StandardCharsets.UTF_8);
         if (javaSource.isBlank()) throw new IllegalArgumentException("Empty source");
         String sourceSha = sha256(javaSource.getBytes(StandardCharsets.UTF_8));
@@ -113,6 +135,9 @@ public final class WorkspaceDocumentationService {
             .put("capability", "software").put("objective", objective);
         try(var store=handoff()) {store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);}
         revalidateGoverned(workflowId,taskId,attemptId);
+        // Check immediately before reserving the external model invocation.
+        authorizeGovernedTool(workflowId, taskId, attemptId,
+            "workspace-documentation", "invoke-model", "ollama:software-engineer");
         // Atomic durable reservation: concurrent Event Bus deliveries must not invoke
         // the model twice for the same attempt. A crash after reservation is ambiguous.
         try(var store=handoff()) {

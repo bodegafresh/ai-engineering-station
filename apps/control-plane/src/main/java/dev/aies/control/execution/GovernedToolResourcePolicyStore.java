@@ -117,6 +117,19 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
         if (!decision.allowed()) throw new SecurityException("Tool authorization denied: " + decision.denial());
     }
 
+    /** Per-attempt immutable revision lookup followed by fresh lease and grant verification.
+     * Revocation or expiry between reads is denied by the second check.
+     */
+    public synchronized void requireAuthorizedCurrent(ExecutionHandoffStore handoff,
+            ExecutionHandoffStore.GovernedAttempt attempt,
+            GovernedToolResourcePolicy.Request request) throws Exception {
+        Objects.requireNonNull(attempt);
+        Objects.requireNonNull(request);
+        var current = read(attempt.workflowId(), attempt.taskId(), attempt.attemptId());
+        if (current == null) throw new SecurityException("Missing operator-approved tool policy");
+        requireAuthorized(handoff, attempt, request, current.policyRevision());
+    }
+
     private GovernedToolResourcePolicy.Snapshot read(String wf, String task, String attempt) throws Exception {
         try (var p = db.prepareStatement("SELECT specialist_id,specialist_version,policy_revision,expires_at,revoked " +
                 "FROM governed_tool_policies WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
