@@ -11,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.net.http.HttpClient;
+import java.nio.file.Path;
 
 /** Opt-in local inference adapter. Admission is non-blocking; HTTP runs on a worker. */
 @Startup @ApplicationScoped
@@ -22,9 +23,15 @@ public class RealSpecialistEventBus {
     @ConfigProperty(name="aies.model.name", defaultValue="qwen3:4b") String model;
     @ConfigProperty(name="aies.execution.real-specialist.timeout-seconds", defaultValue="25") int timeoutSeconds;
     @ConfigProperty(name="aies.execution.real-specialist.max-concurrent", defaultValue="2") int maxConcurrent;
+    @ConfigProperty(name="aies.specialists.governed-selection.enabled",defaultValue="false") String governedFlag;
+    @ConfigProperty(name="aies.specialists.governed-selection.database",defaultValue="./data/specialists.sqlite") String governedDatabase;
     private MessageConsumer<JsonObject> consumer;
     @PostConstruct void start() {
         if (!enabled) return;
+        boolean governed = dev.aies.control.specialists.SpecialistSelectionRuntime
+            .fromConfiguration(governedFlag, Path.of(governedDatabase), mapper).governedEnabled();
+        var guard = governed ? new dev.aies.control.specialists.GovernedSpecialistSelector(
+            Path.of(governedDatabase), mapper, true) : null;
         var gate = new SpecialistAdmissionGate(maxConcurrent);
         var executor = new OllamaSpecialistExecutor(HttpClient.newHttpClient(), mapper, baseUrl, model, timeoutSeconds);
         consumer = vertx.eventBus().localConsumer(ExecutionWorkerEngine.EXECUTE, msg -> {
@@ -35,7 +42,21 @@ public class RealSpecialistEventBus {
             }
             try {
                 vertx.<JsonObject>executeBlocking(() -> {
-                    try (lease) { return executor.execute(msg.body()); }
+                    try (lease) {
+                        JsonObject request = msg.body();
+                        if (guard != null) {
+                            String id = request.getString("specialistId");
+                            String capability = request.getString("capability");
+                            String version = request.getString("governedSpecialistVersion");
+                            if (id == null || capability == null || version == null || version.isBlank())
+                                throw new SecurityException("Missing governed assignment identity");
+                            guard.verifySnapshot(new dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot(
+                                id, version, capability));
+                        } else if (request.containsKey("governedSpecialistVersion")) {
+                            throw new SecurityException("Governed assignment supplied while governance disabled");
+                        }
+                        return executor.execute(request);
+                    }
                 }, false).onSuccess(msg::reply).onFailure(e -> msg.fail(503, e.getClass().getSimpleName()));
             } catch (RuntimeException e) {
                 lease.close();
