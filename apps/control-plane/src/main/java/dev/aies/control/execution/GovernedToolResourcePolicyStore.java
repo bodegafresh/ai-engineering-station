@@ -18,8 +18,17 @@ import java.util.Objects;
  */
 public final class GovernedToolResourcePolicyStore implements AutoCloseable {
     private final Connection db;
+    @FunctionalInterface
+    interface CommitObserver { void afterCommit() throws SQLException; }
+    private final CommitObserver commitObserver;
 
     public GovernedToolResourcePolicyStore(Path file) throws Exception {
+        this(file, () -> {});
+    }
+
+    /** Package-private test seam, not production-configurable. */
+    GovernedToolResourcePolicyStore(Path file, CommitObserver observer) throws Exception {
+        this.commitObserver = Objects.requireNonNull(observer);
         Path normalized = Objects.requireNonNull(file).toAbsolutePath().normalize();
         Files.createDirectories(normalized.getParent());
         db = new org.sqlite.JDBC().connect(
@@ -299,6 +308,8 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
     }
     private void commit() throws SQLException {
         try (var s=db.createStatement()) { s.execute("COMMIT"); }
+        // COMMIT succeeded; caller acknowledgement can still fail.
+        commitObserver.afterCommit();
     }
     private void rollback(Exception cause) {
         try (var s=db.createStatement()) { s.execute("ROLLBACK"); }
