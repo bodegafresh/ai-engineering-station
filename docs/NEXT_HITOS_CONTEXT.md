@@ -1284,3 +1284,13 @@ git diff --check
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationConcurrencyTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Review JUnit XML and Fedora runtime before PR.
 - **Decision:** **GO** for bounded test/runbook merge after passing Fedora checks; **NO-GO** for full governance closure. 12p assurance matrix and ADR remain authoritative pending further evidence.
 - **Next H02-D2C2f.12r:** separate-JVM concurrent recovery coordination, negative governed CDI matrix, SQLite transaction/COMMIT failure injection, tampered-material cases, then re-evaluate formal closure and H02-D2C3 readiness.
+
+
+## H02-D2C2f.12r — Negative material-integrity recovery matrix (bounded slice; Fedora validation pending)
+
+- **Baseline:** `main` SHA `5bf175eb3d03071a3eae68bbce512a5f2b6262f1`, PR #133 merged (12q).
+- **Implementation:** three negative tests in `GovernedDocumentationConsumerE2ETest`: tampered staging after `AFTER_FILE_JOURNAL`, tampered final material after `AFTER_ATOMIC_MOVE`, and tampered completed output on replay. Each must fail closed and not issue a second HTTP request.
+- **Artifacts:** `docs/governance/H02-D2C2f-12r-scope.md` records tested and untested boundaries. Production source, feature flags and operator permissions are unchanged.
+- **Limitations:** no independent-JVM concurrent recovery, negative CDI matrix, SQLite COMMIT fault injection or power-loss/fsync guarantee. H02-D2C2f remains **NO-GO** for final closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12s:** independent-JVM concurrent recovery coordination and deterministic SQLite transaction/COMMIT fault injection, then update certification evidence and review GO/NO-GO.
