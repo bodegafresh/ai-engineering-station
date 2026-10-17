@@ -1226,3 +1226,11 @@ git diff --check
 - **Tests:** new `GovernedPublicationAdmissionTest` covers admission durability across restart, revocation-before-admission denial, revocation-after-admission ordering and missing policy. Run targeted and full Gradle tests on Fedora before PR.
 - **Explicit limitations:** this is NOT a complete publication state machine; `staging`, atomic rename, communication append and execution journal remain outside the policy transaction. Recovery paths are not yet fenced. Existing post-HTTP grant revalidation remains. No exactly-once distributed guarantee, no process crash/COMMIT fault certification, no positive governed CDI E2E. No default feature flag changes.
 - **Next H02-D2C2f.12l:** make recovery paths fence-aware, add durable state transitions and deterministic fault injection; add positive governed Quarkus/CDI test; review linearization and audit-failure handling before closure.
+
+## H02-D2C2f.12l — Fence-aware recovery and replay (bounded safety slice; Fedora validation pending)
+
+- **Baseline:** `main` SHA `bf6db542c49e70780fddc0841078a73feefaf266`, merge PR #127 (12k).
+- **Production:** governed recovery from final file or `.staging`, `recoverWritten`, and completed-artifact `replay` now require a durable publication admission before materializing/reconciling evidence. Legacy non-governed flow remains unchanged. Missing admission fails closed and never triggers a second HTTP invocation.
+- **Tests:** extend `GovernedToolResourcePolicyStoreTest` with admission absence before commitment, durability after restart, revocation-after-admission ordering, and unknown-attempt rejection. Existing governed E2E and full regression must run on Fedora.
+- **Limits:** no cross-store atomic transaction, no automatic recovery of a model response lost before `FILE_WRITTEN`, no crash/COMMIT fault injection or positive CDI E2E. A valid admission is necessary but is not sufficient to guarantee that all cross-store evidence has been reconciled. No change to production default flags. H02-D2C2f remains open.
+- **Next H02-D2C2f.12m:** deterministic restart/fault-injection around `FILE_WRITTEN`/rename/communication append; positive governed Quarkus CDI path and formal closure matrix. Evaluate legacy effects predating admission explicitly instead of silently grandfathering them.

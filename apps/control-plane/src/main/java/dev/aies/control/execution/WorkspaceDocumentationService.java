@@ -109,10 +109,13 @@ public final class WorkspaceDocumentationService {
         }
         // If a prior attempt wrote a file but crashed before artifact append, recover it without a second model call.
         Path expectedOutput=root.resolve(".aies/generated-docs/").resolve(workflowId+"-"+taskId+"-"+attemptId+".md");
-        if(Files.exists(expectedOutput,LinkOption.NOFOLLOW_LINKS))
+        if(Files.exists(expectedOutput,LinkOption.NOFOLLOW_LINKS)) {
+            requirePublicationAdmission(workflowId,taskId,attemptId);
             return recoverWritten(workflowId,taskId,attemptId,sourcePath,sourceSha,expectedOutput);
+        }
         Path staged=expectedOutput.resolveSibling(expectedOutput.getFileName().toString()+".staging");
         if(Files.exists(staged,LinkOption.NOFOLLOW_LINKS)) {
+            requirePublicationAdmission(workflowId,taskId,attemptId);
             if(Files.isSymbolicLink(staged) || !Files.isRegularFile(staged,LinkOption.NOFOLLOW_LINKS))
                 throw new SecurityException("Unsafe staging file");
             try(var store=handoff()) {
@@ -204,11 +207,21 @@ public final class WorkspaceDocumentationService {
             .put("documentSha256", documentSha).put("artifactRecordId", artifactId)
             .put("verification", "FILE_HASH_VERIFIED_NOT_AUDITED");
     }
+    /** Recovery/replay may only materialize evidence for an already admitted governed attempt. */
+    private void requirePublicationAdmission(String workflowId, String taskId, String attemptId) throws Exception {
+        if (governedGuard == null) return; // Legacy mode remains unchanged.
+        try (var policy = new GovernedToolResourcePolicyStore(dataRoot.resolve("governed-tool-policies.sqlite"))) {
+            if (!policy.publicationAdmitted(workflowId, taskId, attemptId))
+                throw new SecurityException("Missing durable publication admission for recovery");
+        }
+    }
+
     private ExecutionHandoffStore handoff() throws Exception {
         return new ExecutionHandoffStore(dataRoot.resolve("execution-handoff.sqlite"),mapper);
     }
     private JsonObject recoverWritten(String workflowId,String taskId,String attemptId,String sourcePath,String sourceSha,Path output) throws Exception {
         revalidateGoverned(workflowId,taskId,attemptId);
+        requirePublicationAdmission(workflowId,taskId,attemptId);
         if(Files.isSymbolicLink(output) || !output.toRealPath().startsWith(root))throw new SecurityException("Unsafe recovery file");
         var bytes=Files.readAllBytes(output);
         if(bytes.length==0 || bytes.length>131072)throw new SecurityException("Invalid recovery content");
@@ -235,6 +248,7 @@ public final class WorkspaceDocumentationService {
             .put("verification","FILE_HASH_VERIFIED_NOT_AUDITED");
     }
     private JsonObject replay(String workflowId,String taskId,String attemptId,String sourcePath,String sourceSha,ExecutionHandoffStore.Effect effect) throws Exception {
+        requirePublicationAdmission(workflowId,taskId,attemptId);
         if(effect.artifactId()==null || effect.documentPath()==null || effect.documentSha256()==null)
             throw new SecurityException("Incomplete effect journal");
         Path output=root.resolve(effect.documentPath()).normalize();
