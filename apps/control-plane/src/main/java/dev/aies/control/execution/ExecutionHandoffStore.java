@@ -47,6 +47,15 @@ public final class ExecutionHandoffStore implements AutoCloseable {
                 }
                 if (!exists) s.execute("ALTER TABLE execution_governed_attempts ADD COLUMN " + col);
             }
+            // H02-D2C2f.6: immutable operator-approved revision bound to each governed attempt.
+            boolean hasPolicyRevision = false;
+            try (var columns = db.createStatement().executeQuery(
+                    "PRAGMA table_info(execution_governed_attempts)")) {
+                while (columns.next())
+                    if ("policy_revision".equals(columns.getString("name"))) hasPolicyRevision = true;
+            }
+            if (!hasPolicyRevision)
+                s.execute("ALTER TABLE execution_governed_attempts ADD COLUMN policy_revision INTEGER");
             // Additive migration for existing databases. Audit identity survives restarts.
             boolean hasAuditColumn = false;
             try (var columns = db.createStatement().executeQuery("PRAGMA table_info(execution_tasks)")) {
@@ -186,6 +195,42 @@ public final class ExecutionHandoffStore implements AutoCloseable {
             commitClaimTransaction();
             return true;
         } catch (Exception e) { rollbackClaimTransaction(); throw e; }
+    }
+
+    /**
+     * Bind one operator-approved revision to an already live governed attempt.
+     * Atomic compare-and-set on the handoff DB. Replays of the same revision are
+     * idempotent; a different revision can never replace the original.
+     */
+    public synchronized void bindGovernedPolicyRevision(GovernedAttempt attempt, long revision)
+            throws Exception {
+        if (revision < 0) throw new SecurityException("Invalid policy revision");
+        requireGovernedAttempt(attempt);
+        try (var p = db.prepareStatement(
+                "UPDATE execution_governed_attempts SET policy_revision=? " +
+                "WHERE workflow_id=? AND task_id=? AND attempt_id=? AND policy_revision IS NULL")) {
+            p.setLong(1,revision); p.setString(2,attempt.workflowId());
+            p.setString(3,attempt.taskId()); p.setString(4,attempt.attemptId());
+            p.executeUpdate();
+        }
+        requireGovernedPolicyRevision(attempt,revision);
+    }
+
+    /** Refuse missing or mismatched revisions, including migrated historical rows. */
+    public synchronized void requireGovernedPolicyRevision(GovernedAttempt attempt, long revision)
+            throws Exception {
+        requireGovernedAttempt(attempt);
+        if (revision < 0) throw new SecurityException("Invalid policy revision");
+        try (var p = db.prepareStatement(
+                "SELECT policy_revision FROM execution_governed_attempts " +
+                "WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+            p.setString(1,attempt.workflowId()); p.setString(2,attempt.taskId());
+            p.setString(3,attempt.attemptId());
+            try (var rs=p.executeQuery()) {
+                if (!rs.next() || rs.getObject(1)==null || rs.getLong(1)!=revision)
+                    throw new SecurityException("Governed policy revision not bound or mismatched");
+            }
+        }
     }
 
     /** Never downgrade a task that has governed history into legacy execution. */

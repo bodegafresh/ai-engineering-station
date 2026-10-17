@@ -80,6 +80,9 @@ public class GovernedPolicyOperatorResource {
              var policies = new GovernedToolResourcePolicyStore(policyPath())) {
             handoff.requireGovernedAttempt(attempt);
             policies.approve(snapshot);
+            // Crash between policy approval and binding leaves a non-executable
+            // policy; exact replay safely completes the binding.
+            handoff.bindGovernedPolicyRevision(attempt,snapshot.policyRevision());
         }
     }
 
