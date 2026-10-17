@@ -185,6 +185,84 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** Real Vert.x local Event Bus delivery through the production consumer; no Quarkus CDI boot. */
+    @Test void eventBusRevocationBlocksSubsequentDeliveryWithoutNewHttp() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls); var bus = new DocumentationBusHarness(f, mock.port())) {
+            JsonObject first = bus.request(request(f));
+            assertEquals("EVIDENCE_PENDING", first.getString("status"));
+            assertEquals(1, calls.get());
+            try (var policies = new GovernedToolResourcePolicyStore(root.resolve("journal/governed-tool-policies.sqlite"))) {
+                policies.revoke(WF, TASK, f.token());
+            }
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> bus.request(request(f)));
+            assertEquals(1, calls.get(), "Revoked delivery cannot reach model");
+        }
+    }
+
+    /** An audit INSERT failure must never become an ALLOW or invoke the external model. */
+    @Test void eventBusAuditWriteFailureDeniesBeforeHttp() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        try (var db = java.sql.DriverManager.getConnection(
+                "jdbc:sqlite:" + root.resolve("journal/governed-tool-policies.sqlite"));
+             var statement = db.createStatement()) {
+            statement.execute("CREATE TRIGGER deny_allow_audit BEFORE INSERT ON governed_policy_audit " +
+                "WHEN NEW.decision='ALLOW' BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END");
+        }
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls); var bus = new DocumentationBusHarness(f, mock.port())) {
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> bus.request(request(f)));
+            assertEquals(0, calls.get());
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+        }
+    }
+
+    /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
+    private final class DocumentationBusHarness implements AutoCloseable {
+        private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
+        private final WorkspaceDocumentationEventBus consumer = new WorkspaceDocumentationEventBus();
+        DocumentationBusHarness(Fixture f, int port) throws Exception {
+            set("vertx", vertx);
+            set("mapper", mapper);
+            set("enabled", true);
+            set("workspaceRoot", root.toString());
+            set("dataRoot", root.resolve("journal").toString());
+            set("baseUrl", "http://127.0.0.1:" + port);
+            set("model", "qwen3:4b");
+            set("timeoutSeconds", 5);
+            set("governedFlag", "true");
+            set("governedDatabase", root.resolve("registry.sqlite").toString());
+            consumer.start();
+        }
+        private void set(String field, Object value) throws Exception {
+            var f = WorkspaceDocumentationEventBus.class.getDeclaredField(field);
+            f.setAccessible(true);
+            f.set(consumer, value);
+        }
+        JsonObject request(JsonObject request) throws Exception {
+            // The production consumer verifies this snapshot against the activated registry.
+            var snapshot = new GovernedSpecialistSelector(
+                root.resolve("registry.sqlite"), mapper, true)
+                .snapshotForDispatch(ID, "software");
+            var body = request.copy().put("governedSpecialistId", snapshot.specialistId())
+                .put("governedSpecialistVersion", snapshot.version())
+                .put("governedCapability", snapshot.capability())
+                .put("governedManifestSha256", snapshot.manifestSha256())
+                .put("governedRegistryRevision", snapshot.registryRevision());
+            return vertx.eventBus().<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE, body,
+                    new io.vertx.core.eventbus.DeliveryOptions().setSendTimeout(10000))
+                .toCompletionStage().toCompletableFuture().get(15, java.util.concurrent.TimeUnit.SECONDS).body();
+        }
+        @Override public void close() throws Exception {
+            consumer.stop();
+            vertx.close().toCompletionStage().toCompletableFuture()
+                .get(10, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
     private WorkspaceDocumentationService service(Fixture f, int port) throws Exception {
         var executor = new OllamaSpecialistExecutor(HttpClient.newHttpClient(), mapper,
             "http://127.0.0.1:" + port, "qwen3:4b", 5);
