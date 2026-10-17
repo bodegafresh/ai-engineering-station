@@ -280,6 +280,75 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** A revoked policy cannot publish a response already in flight to Ollama. */
+    @Test void revocationDuringHttpDeniesPublicationAndLeavesAmbiguousReservation() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        var arrived = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/generate", exchange -> {
+            calls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            arrived.countDown();
+            try {
+                if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    exchange.sendResponseHeaders(503, -1);
+                    return;
+                }
+                byte[] body = "{\"response\":\"# A\\nDocuments value().\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
+                try (var out = exchange.getResponseBody()) { out.write(body); }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally { exchange.close(); }
+        });
+        server.start();
+        var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var service = service(f, server.getAddress().getPort());
+            var pending = pool.submit(() -> service.generate(request(f)));
+            assertTrue(arrived.await(10, java.util.concurrent.TimeUnit.SECONDS), "HTTP request must arrive");
+            try (var policies = new GovernedToolResourcePolicyStore(root.resolve("journal/governed-tool-policies.sqlite"))) {
+                policies.revoke(WF, TASK, f.token());
+            }
+            release.countDown();
+            assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> pending.get(15, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(1, calls.get(), "An already sent HTTP request cannot be cancelled retroactively");
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")), "Revoked output must not be published");
+            try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+                assertTrue(handoff.modelInvocationReserved(WF, TASK, f.token()));
+                assertEquals("AMBIGUOUS_INVOCATION", handoff.invocationRecoveryStatus(WF, TASK, f.token()));
+            }
+            assertThrows(SecurityException.class, () -> service.generate(request(f)));
+            assertEquals(1, calls.get(), "Revocation must deny retry before HTTP");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+            server.stop(0);
+        }
+    }
+
+    /** A durable model reservation is never silently replayed after an ambiguous crash. */
+    @Test void ambiguousReservedInvocationCannotBeAutomaticallyRetried() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+            handoff.recordEffect(WF, TASK, f.token(), "PREPARED", null, null, null);
+            assertTrue(handoff.reserveModelInvocation(WF, TASK, f.token(), "A.java", f.sourceSha()));
+            assertEquals("AMBIGUOUS_INVOCATION", handoff.invocationRecoveryStatus(WF, TASK, f.token()));
+        }
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            assertThrows(IllegalStateException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(0, calls.get());
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
