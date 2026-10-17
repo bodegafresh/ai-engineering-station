@@ -1104,3 +1104,12 @@ git diff --check
 - No hay cambios en código de producción. Validar test focalizado y suite completa en Fedora.
 - **Limitaciones:** cierre/reapertura simula la ventana de crash, pero no equivale a kill -9. Pendientes HTTP positivo, multi-JVM y migración histórica; no habilitar governed en producción.
 - **Próximo H02-D2C2f.11:** E2E HTTP positivo, multiproceso y migraciones. Después H02-D2C3.
+
+## H02-D2C2f.11 — Certificación HTTP positiva con lease real (slice 1)
+
+- Baseline: `main` después de H02-D2C2f.10.
+- Test `GovernedPolicyOperatorHttpPositiveTest`: Quarkus HTTP real y RestAssured con perfil aislado, token de operador, directorio temporal exclusivo y dos stores SQLite reales.
+- Flujo: importar plan, reclamar lease, vincular identidad y fingerprint, aprobar vía HTTP, repetir aprobación idéntica, verificar autorización ALLOW, revocar vía HTTP, comprobar DENY durable y rechazar reactivación HTTP.
+- No se modifican contratos de producción. Se verifica persistencia mediante reapertura de conexiones y journal de revocación.
+- **Limitaciones:** todavía no hay certificación multi-JVM ni kill -9, migración histórica ni integración E2E de consumidores. El test usa HTTP real contra Quarkus embebido, no despliegue externo. No declarar finalizada H02-D2C2f ni habilitar gobernanza en producción.
+- **Próximo H02-D2C2f.12:** multiproceso JVM, interrupción abrupta, migraciones y consumidores; después H02-D2C3.

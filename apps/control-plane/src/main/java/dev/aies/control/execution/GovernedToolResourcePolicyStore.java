@@ -22,7 +22,14 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
     public GovernedToolResourcePolicyStore(Path file) throws Exception {
         Path normalized = Objects.requireNonNull(file).toAbsolutePath().normalize();
         Files.createDirectories(normalized.getParent());
-        db = DriverManager.getConnection("jdbc:sqlite:" + normalized);
+        db = new org.sqlite.JDBC().connect(
+            "jdbc:sqlite:" + normalized,
+            new java.util.Properties()
+        );
+
+        if (db == null) {
+            throw new SQLException("SQLite driver refused URL");
+        }
         try (var s = db.createStatement()) {
             s.execute("PRAGMA busy_timeout=5000");
             s.execute("PRAGMA foreign_keys=ON");
