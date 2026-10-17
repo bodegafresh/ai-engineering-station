@@ -481,6 +481,63 @@ class GovernedDocumentationConsumerE2ETest {
         return String.join(java.io.File.pathSeparator, entries);
     }
 
+    /** A changed staged file must never be promoted after a crash boundary. */
+    @Test void alteredStagingIsRejectedWithoutReinvokingModel() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var first = service(f, mock.port());
+            first.publicationCheckpoint(phase -> {
+                if ("AFTER_FILE_JOURNAL".equals(phase)) throw new java.io.IOException("Injected crash boundary");
+            });
+            assertThrows(java.io.IOException.class, () -> first.generate(request(f)));
+            assertEquals(1, calls.get());
+            Path staged = root.resolve(".aies/generated-docs/" + WF + "-" + TASK + "-" + f.token() + ".md.staging");
+            assertTrue(Files.isRegularFile(staged));
+            Files.writeString(staged, "tampered content", StandardCharsets.UTF_8);
+            assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(1, calls.get(), "Tampered staging must not trigger another HTTP request");
+            assertFalse(Files.exists(staged.resolveSibling(staged.getFileName().toString().replace(".staging", ""))));
+        }
+    }
+
+    /** A changed final file must never be accepted during recovery. */
+    @Test void alteredFinalMaterialIsRejectedWithoutReinvokingModel() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var first = service(f, mock.port());
+            first.publicationCheckpoint(phase -> {
+                if ("AFTER_ATOMIC_MOVE".equals(phase)) throw new java.io.IOException("Injected crash boundary");
+            });
+            assertThrows(java.io.IOException.class, () -> first.generate(request(f)));
+            assertEquals(1, calls.get());
+            Path output = root.resolve(".aies/generated-docs/" + WF + "-" + TASK + "-" + f.token() + ".md");
+            assertTrue(Files.isRegularFile(output));
+            Files.writeString(output, "tampered content", StandardCharsets.UTF_8);
+            assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(1, calls.get(), "Tampered output must not trigger another HTTP request");
+        }
+    }
+
+    /** Replay of a completed effect must verify material bytes again. */
+    @Test void alteredCompletedArtifactIsRejectedOnReplay() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            JsonObject result = service(f, mock.port()).generate(request(f));
+            assertEquals("EVIDENCE_PENDING", result.getString("status"));
+            assertEquals(1, calls.get());
+            Path output = root.resolve(result.getString("documentPath"));
+            Files.writeString(output, "tampered content", StandardCharsets.UTF_8);
+            assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(1, calls.get(), "Replay must not call HTTP");
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
