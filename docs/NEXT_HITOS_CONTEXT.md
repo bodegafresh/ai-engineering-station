@@ -1273,3 +1273,14 @@ git diff --check
 - **No production changes:** no feature flags, runtime behavior or operator policy changes in this slice.
 - **Validation:** `python3 scripts/check-governance-12p.py`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Attach test report and CI evidence before PR.
 - **Next H02-D2C2f.12q:** implement negative CDI, concurrent recovery/revocation and SQLite COMMIT fault matrix; draft operator runbook; revisit the NO-GO decision with measured evidence before H02-D2C3.
+
+
+## H02-D2C2f.12q — Two-connection admission/revocation ordering and recovery runbook (bounded slice; Fedora validation pending)
+
+- **Baseline:** `main` SHA `a040667342f77938bd7f29352bec75164ce5311e`, PR #132 merged (12p).
+- **Implementation:** `GovernedPublicationConcurrencyTest` covers two independent SQLite policy-store connections with revoke-first, admit-first and simultaneous race outcomes; verifies durable admission state and fail-closed denial. No production code or default flag changes.
+- **Operational artifact:** `docs/runbooks/H02-D2C2f-governed-recovery.md` describes evidence-preserving triage, policy-admission verification, SHA-256 integrity, quarantine, and no automatic HTTP retry for ambiguous invocation.
+- **Scope boundary:** Two connections in one JVM are **not** two independent processes. These tests do **not** certify recovery-worker concurrency, fault injection at SQLite COMMIT, negative CDI scenarios, or filesystem power-loss durability. Do not mark H02-D2C2f complete.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationConcurrencyTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Review JUnit XML and Fedora runtime before PR.
+- **Decision:** **GO** for bounded test/runbook merge after passing Fedora checks; **NO-GO** for full governance closure. 12p assurance matrix and ADR remain authoritative pending further evidence.
+- **Next H02-D2C2f.12r:** separate-JVM concurrent recovery coordination, negative governed CDI matrix, SQLite transaction/COMMIT failure injection, tampered-material cases, then re-evaluate formal closure and H02-D2C3 readiness.
