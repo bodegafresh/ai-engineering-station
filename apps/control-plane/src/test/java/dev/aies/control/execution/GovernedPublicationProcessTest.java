@@ -133,6 +133,35 @@ class GovernedPublicationProcessTest {
         } finally { if(stale.isAlive()) stale.destroyForcibly().waitFor(); }
     }
 
+    /** A JVM can retain an already-committed admission after a separate JVM revokes.
+     * This is evidence of the post-admission boundary, NOT proof of filesystem fencing. */
+    @Test void pausedAfterAdmissionSeesDurableHistoryButCannotReadmit() throws Exception {
+        Path db=setup();
+        Path ready=temp.resolve("post-admission-ready");
+        Path release=temp.resolve("post-admission-release");
+        Process oldJvm=new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","java").toString(),
+            "-cp",classpath(),GovernedPublicationProcessChild.class.getName(),
+            db.toString(),"admit-then-pause",ready.toString(),release.toString())
+            .redirectErrorStream(true).start();
+        try {
+            awaitReady(oldJvm,ready);
+            assertEquals("admitted",java.nio.file.Files.readString(ready));
+            try(var committed=new GovernedToolResourcePolicyStore(db)) {
+                assertTrue(committed.publicationAdmitted("wf","task","attempt"));
+            }
+            assertEquals(0,waitFor(start(db,"revoke")));
+            assertEquals(21,waitFor(start(db,"admit")));
+            java.nio.file.Files.writeString(release,"continue");
+            assertEquals(0,waitFor(oldJvm));
+            try(var reopened=new GovernedToolResourcePolicyStore(db)) {
+                assertTrue(reopened.publicationAdmitted("wf","task","attempt"));
+                assertEquals(1,reopened.auditTrail("wf","task","attempt").stream()
+                    .filter(e->"PUBLICATION_ADMISSION".equals(e.type()) && "ALLOW".equals(e.decision()))
+                    .count());
+            }
+        } finally { if(oldJvm.isAlive()) oldJvm.destroyForcibly().waitFor(); }
+    }
+
     private static Process startBarrier(Path db,Path ready,Path release) throws Exception {
         return new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","java").toString(),
             "-cp",classpath(),GovernedPublicationProcessChild.class.getName(),
