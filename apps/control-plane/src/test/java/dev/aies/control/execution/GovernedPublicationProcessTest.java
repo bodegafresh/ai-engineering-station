@@ -92,4 +92,60 @@ class GovernedPublicationProcessTest {
             assertEquals(admitted==0,reopened.publicationAdmitted("wf","task","attempt"));
         }
     }
+
+    /** The stale JVM is already running before revocation, but cannot admit afterward. */
+    @Test void staleJvmCannotAdmitAfterAnotherJvmRevokes() throws Exception {
+        Path db=setup();
+        Path ready=temp.resolve("stale-ready");
+        Path release=temp.resolve("stale-release");
+        Process stale=startBarrier(db,ready,release);
+        try {
+            awaitReady(stale,ready);
+            assertEquals(0,waitFor(start(db,"revoke")));
+            java.nio.file.Files.writeString(release,"continue");
+            assertEquals(21,waitFor(stale));
+            try(var reopened=new GovernedToolResourcePolicyStore(db)) {
+                assertFalse(reopened.publicationAdmitted("wf","task","attempt"));
+                assertEquals(0,reopened.auditTrail("wf","task","attempt").stream()
+                    .filter(e->"PUBLICATION_ADMISSION".equals(e.type()) && "ALLOW".equals(e.decision()))
+                    .count());
+            }
+        } finally { if(stale.isAlive()) stale.destroyForcibly().waitFor(); }
+    }
+
+    /** An old JVM cannot re-admit an attempt that another JVM already admitted. */
+    @Test void staleJvmCannotDuplicateDurableAdmission() throws Exception {
+        Path db=setup();
+        Path ready=temp.resolve("duplicate-ready");
+        Path release=temp.resolve("duplicate-release");
+        Process stale=startBarrier(db,ready,release);
+        try {
+            awaitReady(stale,ready);
+            assertEquals(0,waitFor(start(db,"admit")));
+            java.nio.file.Files.writeString(release,"continue");
+            assertEquals(21,waitFor(stale));
+            try(var reopened=new GovernedToolResourcePolicyStore(db)) {
+                assertTrue(reopened.publicationAdmitted("wf","task","attempt"));
+                assertEquals(1,reopened.auditTrail("wf","task","attempt").stream()
+                    .filter(e->"PUBLICATION_ADMISSION".equals(e.type()) && "ALLOW".equals(e.decision()))
+                    .count());
+            }
+        } finally { if(stale.isAlive()) stale.destroyForcibly().waitFor(); }
+    }
+
+    private static Process startBarrier(Path db,Path ready,Path release) throws Exception {
+        return new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","java").toString(),
+            "-cp",classpath(),GovernedPublicationProcessChild.class.getName(),
+            db.toString(),"admit-after-barrier",ready.toString(),release.toString())
+            .redirectErrorStream(true).start();
+    }
+
+    private static void awaitReady(Process process,Path ready) throws Exception {
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(20);
+        while (!java.nio.file.Files.exists(ready)) {
+            assertTrue(process.isAlive(),"Child JVM terminated before barrier");
+            assertTrue(System.nanoTime()<deadline,"Child JVM did not reach barrier");
+            Thread.sleep(10);
+        }
+    }
 }
