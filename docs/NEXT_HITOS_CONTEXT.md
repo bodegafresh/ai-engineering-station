@@ -1234,3 +1234,13 @@ git diff --check
 - **Tests:** extend `GovernedToolResourcePolicyStoreTest` with admission absence before commitment, durability after restart, revocation-after-admission ordering, and unknown-attempt rejection. Existing governed E2E and full regression must run on Fedora.
 - **Limits:** no cross-store atomic transaction, no automatic recovery of a model response lost before `FILE_WRITTEN`, no crash/COMMIT fault injection or positive CDI E2E. A valid admission is necessary but is not sufficient to guarantee that all cross-store evidence has been reconciled. No change to production default flags. H02-D2C2f remains open.
 - **Next H02-D2C2f.12m:** deterministic restart/fault-injection around `FILE_WRITTEN`/rename/communication append; positive governed Quarkus CDI path and formal closure matrix. Evaluate legacy effects predating admission explicitly instead of silently grandfathering them.
+
+
+## H02-D2C2f.12m — Deterministic publication interruption/restart recovery (bounded slice; Fedora validation pending)
+
+- **Baseline:** `main` SHA `345cfedb28ecc4651cc35993e13a61c6270b7919`, PR #128 merged (12l).
+- **Implementation:** instance-scoped, package-private no-op `PublicationCheckpoint` in `WorkspaceDocumentationService` at three boundaries: after durable `FILE_WRITTEN`, after `ATOMIC_MOVE`, and after idempotent communication append but before `ARTIFACT_RECORDED`. No external flag, mutable global state or new privileged API. Test simulates failure with an exception, creates a fresh service instance and reconciles the existing staging/final artifact without replaying HTTP.
+- **Tests:** three governed SQLite+mock HTTP integration cases in `GovernedDocumentationConsumerE2ETest`: verify one HTTP call, `EVIDENCE_PENDING`, replay and no duplicate external model call after restart. Existing suite remains mandatory.
+- **Explicit limitations:** deterministic exception + fresh Java service is **not** an OS process crash, power loss, fsync certification or SQLite COMMIT crash. Positive governed CDI `@QuarkusTest` remains pending. No cross-store exactly-once guarantee; no default feature flag changes. H02-D2C2f remains open.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`; inspect reports before PR.
+- **Next H02-D2C2f.12n:** isolated positive governed CDI/Quarkus E2E, subprocess kill/restart and durable fault matrix; review final closure criteria before H02-D2C3 observability/shadow/rollback.

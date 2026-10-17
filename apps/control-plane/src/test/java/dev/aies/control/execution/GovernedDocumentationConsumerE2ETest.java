@@ -384,6 +384,41 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** Deterministic exception boundaries model process interruption; restart uses fresh service instances. */
+    @Test void restartReconcilesEveryPublicationBoundaryWithoutSecondHttp() throws Exception {
+        // JUnit runs each phase in a distinct test method below; this method exercises
+        // the journal-to-staging boundary.
+        runPublicationBoundaryScenario("AFTER_FILE_JOURNAL");
+    }
+
+    @Test void restartAfterAtomicMoveDoesNotRepeatHttp() throws Exception {
+        runPublicationBoundaryScenario("AFTER_ATOMIC_MOVE");
+    }
+
+    @Test void restartAfterArtifactAppendDoesNotDuplicateEvidence() throws Exception {
+        runPublicationBoundaryScenario("AFTER_ARTIFACT_APPEND");
+    }
+
+    private void runPublicationBoundaryScenario(String phase) throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var first = service(f, mock.port());
+            first.publicationCheckpoint(reached -> {
+                if (phase.equals(reached)) throw new java.io.IOException("Injected " + reached);
+            });
+            assertThrows(java.io.IOException.class, () -> first.generate(request(f)));
+            assertEquals(1, calls.get(), "HTTP must have completed before the interruption");
+            var restarted = service(f, mock.port());
+            JsonObject recovered = restarted.generate(request(f));
+            assertEquals("EVIDENCE_PENDING", recovered.getString("status"));
+            assertEquals(1, calls.get(), "Restart must never invoke model again");
+            assertEquals(Boolean.TRUE, restarted.generate(request(f)).getBoolean("replayed"));
+            assertEquals(1, calls.get());
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();

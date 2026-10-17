@@ -17,6 +17,12 @@ public final class WorkspaceDocumentationService {
     private final Path dataRoot;
     private final OllamaSpecialistExecutor model;
     private final ObjectMapper mapper;
+    /** Instance-scoped failure seam; production defaults to no-op. Never global mutable state. */
+    @FunctionalInterface interface PublicationCheckpoint { void reached(String phase) throws Exception; }
+    private PublicationCheckpoint publicationCheckpoint = phase -> {};
+    void publicationCheckpoint(PublicationCheckpoint checkpoint) {
+        this.publicationCheckpoint = Objects.requireNonNull(checkpoint);
+    }
     private final dev.aies.control.specialists.GovernedSpecialistSelector governedGuard;
     private final dev.aies.control.specialists.GovernedSpecialistSelector.AssignmentSnapshot governedSnapshot;
 
@@ -191,7 +197,9 @@ public final class WorkspaceDocumentationService {
             store.recordEffect(workflowId,taskId,attemptId,"FILE_WRITTEN",null,
                 root.relativize(output).toString(),documentSha);
         }
+        publicationCheckpoint.reached("AFTER_FILE_JOURNAL");
         Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
+        publicationCheckpoint.reached("AFTER_ATOMIC_MOVE");
         var artifact = CommunicationContracts.validate(new CommunicationContracts.Artifact(
             CommunicationContracts.VERSION, workflowId, taskId, "software-engineer", "execution-result", "text/markdown",
             markdown, java.util.List.of(WorkspaceMaterialEvidence.reference(root.relativize(output).toString(), documentSha))));
@@ -199,6 +207,7 @@ public final class WorkspaceDocumentationService {
         try (var communication = new CommunicationStore(dataRoot.resolve("communication.sqlite"), mapper)) {
             artifactId = communication.appendIdempotent("execution-"+attemptId+"-artifact", "ARTIFACT", workflowId, taskId, artifact).id();
         }
+        publicationCheckpoint.reached("AFTER_ARTIFACT_APPEND");
         revalidateGoverned(workflowId,taskId,attemptId);
         try(var store=handoff()) {store.recordEffect(workflowId,taskId,attemptId,"ARTIFACT_RECORDED",artifactId,root.relativize(output).toString(),documentSha);}
         return new JsonObject().put("status", "EVIDENCE_PENDING").put("workflowId", workflowId)
