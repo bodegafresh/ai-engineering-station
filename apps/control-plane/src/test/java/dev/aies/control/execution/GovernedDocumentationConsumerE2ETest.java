@@ -1,0 +1,165 @@
+package dev.aies.control.execution;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import dev.aies.control.specialists.GovernedSpecialistSelector;
+import dev.aies.control.specialists.SpecialistGovernanceService;
+import dev.aies.control.specialists.SpecialistRegistryStore;
+import io.vertx.core.json.JsonObject;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** Real governed documentation service, two SQLite stores, activated registry and HTTP mock. */
+class GovernedDocumentationConsumerE2ETest {
+    @TempDir Path root;
+    private final ObjectMapper mapper = new ObjectMapper();
+    private static final String WF = "wf-execution", TASK = "a", ID = "software-engineer";
+    private static final long POLICY_REVISION = 42;
+    private static final String MANIFEST = """
+        {"schemaVersion":"2.0","kind":"SpecialistProfile","id":"software-engineer",
+        "version":"1.0.0","displayName":"Software Engineer","discipline":"engineering.software",
+        "competencies":[{"capabilityId":"software","capabilityVersion":"1.0.0",
+        "requiredProficiency":"ADVANCED"}],"roles":["EXECUTOR"],"requiredTools":[],
+        "maxConcurrent":1,"costUnits":3}
+        """;
+
+    private record Fixture(GovernedSpecialistSelector selector,
+                           GovernedSpecialistSelector.AssignmentSnapshot snapshot,
+                           String token, String sourceSha) {}
+
+    private Fixture fixture() throws Exception {
+        Files.writeString(root.resolve("A.java"), "public class A { public int value() { return 1; } }\n");
+        var sourceSha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+            .digest(Files.readAllBytes(root.resolve("A.java"))));
+        Path registry = root.resolve("registry.sqlite");
+        String hash;
+        try (var store = new SpecialistRegistryStore(registry, mapper)) {
+            hash = store.propose(MANIFEST).manifestSha256();
+        }
+        var actor = new SpecialistGovernanceService.Principal("human-operator", Set.of(
+            "specialists:validate", "specialists:approve", "specialists:activate", "specialists:revoke"));
+        try (var governance = new SpecialistGovernanceService(registry, mapper)) {
+            governance.transition(ID, "1.0.0", SpecialistGovernanceService.Action.VALIDATE, 0, hash, actor);
+            governance.transition(ID, "1.0.0", SpecialistGovernanceService.Action.APPROVE, 1, hash, actor);
+            governance.transition(ID, "1.0.0", SpecialistGovernanceService.Action.ACTIVATE, 2, hash, actor);
+        }
+        var selector = new GovernedSpecialistSelector(registry, mapper, true);
+        var snapshot = selector.snapshotForDispatch(ID, "software");
+        String token;
+        try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+            handoff.importPlan(ExecutionGraphTest.plan(ExecutionGraphTest.task(TASK)));
+            handoff.authorizeCapability(new ExecutionCapabilityAuthorization(
+                WF, TASK, "workspace-documentation", "A.java", sourceSha));
+            token = handoff.claim(WF, 3, 600).orElseThrow().leaseToken();
+            handoff.bindGovernedAttempt(attempt(token, snapshot));
+        }
+        return new Fixture(selector, snapshot, token, sourceSha);
+    }
+
+    private static ExecutionHandoffStore.GovernedAttempt attempt(String token,
+            GovernedSpecialistSelector.AssignmentSnapshot s) {
+        return new ExecutionHandoffStore.GovernedAttempt(WF, TASK, token, s.specialistId(),
+            s.version(), s.capability(), s.manifestSha256(), s.registryRevision());
+    }
+    private static GovernedToolResourcePolicy.Grant read() {
+        return new GovernedToolResourcePolicy.Grant("workspace-documentation", "read-source", "A.java");
+    }
+    private static GovernedToolResourcePolicy.Grant invoke() {
+        return new GovernedToolResourcePolicy.Grant("workspace-documentation", "invoke-model", "ollama:software-engineer");
+    }
+    private void approve(Fixture f, List<GovernedToolResourcePolicy.Grant> grants) throws Exception {
+        try (var policies = new GovernedToolResourcePolicyStore(root.resolve("journal/governed-tool-policies.sqlite"))) {
+            policies.approve(new GovernedToolResourcePolicy.Snapshot(WF, TASK, f.token(), ID,
+                f.snapshot().version(), POLICY_REVISION, Instant.parse("2099-01-01T00:00:00Z"), false, grants));
+        }
+        try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+            handoff.bindGovernedPolicyRevision(attempt(f.token(), f.snapshot()), POLICY_REVISION);
+        }
+    }
+    private static JsonObject request(Fixture f) {
+        return new JsonObject().put("workflowId", WF).put("taskId", TASK).put("attemptId", f.token())
+            .put("sourcePath", "A.java").put("approvedSourceSha256", f.sourceSha()).put("approved", true);
+    }
+
+    @Test void missingReadGrantCannotInvokeModelOrPublishDocument() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            assertThrows(SecurityException.class, () -> service.generate(request(f)));
+            assertEquals(0, calls.get());
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+        }
+    }
+
+    @Test void missingInferenceGrantDeniesBeforeExternalHttp() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            assertThrows(SecurityException.class, () -> service.generate(request(f)));
+            assertEquals(0, calls.get());
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+        }
+    }
+
+    @Test void exactGrantsGenerateOnceAndRevocationPreventsReplay() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            JsonObject first = service.generate(request(f));
+            assertEquals("EVIDENCE_PENDING", first.getString("status"));
+            assertEquals(1, calls.get());
+            assertTrue(Files.readString(root.resolve(first.getString("documentPath"))).contains("Documents value"));
+            JsonObject replay = service.generate(request(f));
+            assertEquals(Boolean.TRUE, replay.getBoolean("replayed"));
+            assertEquals(first.getString("artifactRecordId"), replay.getString("artifactRecordId"));
+            assertEquals(1, calls.get());
+            try (var policies = new GovernedToolResourcePolicyStore(root.resolve("journal/governed-tool-policies.sqlite"))) {
+                policies.revoke(WF, TASK, f.token());
+            }
+            assertThrows(SecurityException.class, () -> service.generate(request(f)));
+            assertEquals(1, calls.get());
+        }
+    }
+
+    private WorkspaceDocumentationService service(Fixture f, int port) throws Exception {
+        var executor = new OllamaSpecialistExecutor(HttpClient.newHttpClient(), mapper,
+            "http://127.0.0.1:" + port, "qwen3:4b", 5);
+        return new WorkspaceDocumentationService(root, root.resolve("journal"), executor,
+            mapper, f.selector(), f.snapshot());
+    }
+    private static final class MockModel implements AutoCloseable {
+        private final HttpServer server;
+        MockModel(AtomicInteger calls) throws Exception {
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/api/generate", exchange -> {
+                calls.incrementAndGet();
+                exchange.getRequestBody().readAllBytes();
+                byte[] response = "{\"response\":\"# A\\nDocuments value().\"}"
+                    .getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, response.length);
+                try (var out = exchange.getResponseBody()) { out.write(response); }
+            });
+            server.start();
+        }
+        int port() { return server.getAddress().getPort(); }
+        @Override public void close() { server.stop(0); }
+    }
+}
