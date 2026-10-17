@@ -56,3 +56,9 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 - This only exercises transactional SQLite admission, **not** a monotonic filesystem fencing token or a two-JVM stale-owner scenario.
 - Operator runbook and threat model: `docs/governance/H02-D2C2f-13a-concurrency-evidence.md`.
 - Global certification remains **NO-GO** until missing properties are proven or explicitly excluded by a reviewed operational contract.
+
+## H02-D2C2f.13b — real two-JVM stale admission gate (Fedora validation pending)
+
+- Independent JVM opens SQLite and pauses at an explicit barrier. A second JVM revokes or admits, then the first resumes. A stale admission must fail; persisted ALLOW/admission count must be zero after revoke, one after prior admission.
+- This proves current-state checking at the **SQLite admission boundary**, not exclusion of a writer already past admission from filesystem or artifact side effects. No lease-epoch fencing token has been added.
+- **NO-GO** for overall production certification. See `docs/governance/H02-D2C2f-13b-stale-jvm-evidence.md`.

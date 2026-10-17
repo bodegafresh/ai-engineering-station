@@ -1380,3 +1380,12 @@ git diff --check
 - **Limits:** this is **not** a two-JVM fencing test; filesystem stale-writer exclusion, power-loss durability and cross-store atomicity remain unproven. Overall **NO-GO**.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationConcurrentAdmissionTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.13b:** real two-JVM stale-owner/resume scenario, fencing ADR and enforcement or explicit operational restriction; formal evidence-based certification review.
+
+## H02-D2C2f.13b — stale JVM admission boundary (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `6e55112cd56af17b64776f1e423b8239deb37801` (PR #143 merged).
+- **Implementation:** extend real two-JVM policy tests with explicit ready/release process barriers. An already-running JVM attempts publication admission after a second JVM durably revokes the policy or admits the attempt; stale request is denied and durable audit/admission counts remain correct. No production changes.
+- **Evidence:** `docs/governance/H02-D2C2f-13b-stale-jvm-evidence.md` and assurance matrix.
+- **Boundary:** tests **admission fencing only**, not a paused writer between admission and filesystem commit, ownership epochs, hostile database modifications, power loss or cross-store atomicity. Global **NO-GO**.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.13c:** investigate post-admission stale filesystem writer, enforce a scoped invariant or formalize single-writer operational contract, and review certification evidence.
