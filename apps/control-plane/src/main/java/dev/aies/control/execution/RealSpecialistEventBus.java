@@ -65,6 +65,11 @@ public class RealSpecialistEventBus {
                                  request.containsKey("governedManifestSha256") || request.containsKey("governedRegistryRevision")) {
                             throw new SecurityException("Governed assignment supplied while governance disabled");
                         }
+                        if (guard != null) {
+                            // Enforce the operator-owned per-attempt grant immediately
+                            // before the external model call, not on Event Bus admission.
+                            GovernedInferenceBoundary.require(request, Path.of(dataRoot), mapper);
+                        }
                         return executor.execute(request);
                     }
                 }, false).onSuccess(msg::reply).onFailure(e -> msg.fail(503, e.getClass().getSimpleName()));
