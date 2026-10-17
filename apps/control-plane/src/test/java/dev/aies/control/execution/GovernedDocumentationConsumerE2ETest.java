@@ -419,6 +419,68 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** A separate JVM halts without cleanup; the parent JVM must recover durable state. */
+    @Test void abruptSubprocessTerminationRecoversPublicationWithoutSecondHttp() throws Exception {
+        for (String checkpoint : List.of("AFTER_FILE_JOURNAL", "AFTER_ATOMIC_MOVE", "AFTER_ARTIFACT_APPEND")) {
+            // A unique workspace per phase avoids reusing the attempt and its durable reservation.
+            Path previousRoot = root;
+            root = Files.createDirectory(previousRoot.resolve(checkpoint.toLowerCase(java.util.Locale.ROOT)));
+            try {
+                Fixture f = fixture();
+                approve(f, List.of(read(), invoke()));
+                AtomicInteger calls = new AtomicInteger();
+                try (var mock = new MockModel(calls)) {
+                    var command = new java.util.ArrayList<String>();
+                    command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+                    command.add("-cp");
+                    command.add(subprocessClasspath());
+                    command.add(GovernedDocumentationProcessCrashChild.class.getName());
+                    command.add(root.toString());
+                    command.add(Integer.toString(mock.port()));
+                    command.add(f.token());
+                    command.add(f.sourceSha());
+                    command.add(checkpoint);
+                    var process = new ProcessBuilder(command).redirectErrorStream(true).start();
+                    try {
+                        assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS),
+                            "Subprocess timeout at " + checkpoint);
+                        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                        assertEquals(73, process.exitValue(), "Subprocess did not reach " + checkpoint + ": " + output);
+                    } finally {
+                        if (process.isAlive()) process.destroyForcibly().waitFor();
+                    }
+                    assertEquals(1, calls.get(), "Exactly one observed HTTP call before JVM halt");
+                    var recovered = service(f, mock.port()).generate(request(f));
+                    assertEquals("EVIDENCE_PENDING", recovered.getString("status"));
+                    assertEquals(1, calls.get(), "Recovery must not re-invoke HTTP");
+                    var replayed = service(f, mock.port()).generate(request(f));
+                    assertEquals(Boolean.TRUE, replayed.getBoolean("replayed"));
+                    assertEquals(recovered.getString("artifactRecordId"), replayed.getString("artifactRecordId"));
+                    assertEquals(1, calls.get());
+                    assertEquals(recovered.getString("documentSha256"),
+                        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                            Files.readAllBytes(root.resolve(recovered.getString("documentPath"))))));
+                }
+            } finally { root = previousRoot; }
+        }
+    }
+
+    /** Gradle's test worker may use a classloader rather than java.class.path for project dependencies. */
+    private static String subprocessClasspath() throws Exception {
+        var entries = new java.util.LinkedHashSet<String>();
+        entries.addAll(java.util.Arrays.asList(System.getProperty("java.class.path", "").split(
+            java.util.regex.Pattern.quote(java.io.File.pathSeparator))));
+        for (ClassLoader loader = GovernedDocumentationConsumerE2ETest.class.getClassLoader();
+             loader != null; loader = loader.getParent()) {
+            if (loader instanceof java.net.URLClassLoader urls) {
+                for (var url : urls.getURLs()) {
+                    if ("file".equals(url.getProtocol())) entries.add(Path.of(url.toURI()).toString());
+                }
+            }
+        }
+        return String.join(java.io.File.pathSeparator, entries);
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
