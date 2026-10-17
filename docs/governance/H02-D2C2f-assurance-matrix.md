@@ -25,3 +25,10 @@ Baseline `6644338821a9571de2b90bfae0b37676cf0b95ce` (PR #131). Status is based o
 ## Evidence collection checklist
 
 Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub CI run URL, reviewers, exceptions accepted, and approval date. Do not equate a Gradle `BUILD SUCCESSFUL` with proof that each required failure scenario was exercised.
+
+## H02-D2C2f.12w — bounded negative CDI evidence (Fedora validation pending)
+
+- Real Quarkus-managed Event Bus consumer rejects traversal, absolute source path, wrong source digest, forged attempt and missing workflow ID; each denial must leave HTTP invocation count unchanged.
+- `GovernedDocumentationQuarkusPositiveTest` still verifies successful governed generation and idempotent replay.
+- These tests cover input and authorization boundaries, **not** every revocation/tampering variant. CDI matrix remains partial.
+- Actual JDBC `COMMIT` exception injection, filesystem durability and full cross-store atomicity remain unproven. Overall closure remains **NO-GO**.
