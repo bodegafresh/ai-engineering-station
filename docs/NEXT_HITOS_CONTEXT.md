@@ -1095,3 +1095,12 @@ git diff --check
 - No se modifican los contratos de producción. Los tests HTTP del perfil habilitado no aprueban políticas válidas ni crean leases; las respuestas 409 son esperadas.
 - **Limitaciones:** falta E2E HTTP positivo con intento/lease reales, certificación multi-JVM, migraciones/replay y escenarios de crash entre aprobación y vinculación. No se declara finalizada H02-D2C2f.9 ni se recomienda habilitar governed en producción.
 - **Próximo incremento H02-D2C2f.10:** E2E positivo, recuperación de fallos, multiproceso y cierre de certificación. Después H02-D2C3.
+
+## H02-D2C2f.10 — Recuperación entre dos stores SQLite (slice 1)
+
+- Baseline: `main` tras H02-D2C2f.9.
+- Test de integración con `ExecutionHandoffStore` y `GovernedToolResourcePolicyStore` reales: plan, lease, identidad, aprobación, cierre/reapertura entre aprobación y binding, DENY antes del vínculo, replay idéntico, binding, ALLOW y revocación persistente.
+- Inmutabilidad: revisión alternativa y sustitución de política rechazadas. Journal verificado tras reinicio.
+- No hay cambios en código de producción. Validar test focalizado y suite completa en Fedora.
+- **Limitaciones:** cierre/reapertura simula la ventana de crash, pero no equivale a kill -9. Pendientes HTTP positivo, multi-JVM y migración histórica; no habilitar governed en producción.
+- **Próximo H02-D2C2f.11:** E2E HTTP positivo, multiproceso y migraciones. Después H02-D2C3.
