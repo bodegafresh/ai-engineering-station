@@ -1038,3 +1038,13 @@ git diff --check
 - **Pruebas:** se añade prueba negativa de ausencia de política; ejecutar test focalizado y suite completa en Fedora. Las pruebas unitarias no constituyen certificación E2E de flujo gobernado.
 - **Limitaciones / seguridad:** todavía NO hay flujo operador de provisión y aprobación de grants conectado al worker. Por diseño, documentación gobernada sin grants aprobados falla cerrada; no habilitar flag de gobernanza en producción. El consumidor de inferencia general no está cableado. La revisión de política es inmutable por intento pero no está persistida en el handoff de ejecución; falta decisión auditada durable y prueba multi-JVM real. No hay atomicidad SQLite/HTTP.
 - **Próximo slice H02-D2C2f.4:** diseñar y conectar provisión confiable de grants mínimos, revisión vinculada al handoff, auditoría de decisiones, autorización en inferencia general y certificación E2E/multi-JVM de revocación; luego H02-D2C3 shadow/observabilidad/rollback. Mantener V3.1–V3.3 sobre los consumidores actuales.
+
+
+## H02-D2C2f.4 — Gobernanza de inferencia genérica (incremento acotado)
+
+- **Base:** `main` con H02-D2C2f.3 integrado. Este incremento protege `RealSpecialistEventBus` en modo governed mediante `GovernedInferenceBoundary`, antes de `OllamaSpecialistExecutor.execute`.
+- **Permiso exacto:** `ollama / invoke-model / ollama:<specialistId>` derivado por el servidor; los campos `tool`, `action`, `resource`, `approved` recibidos por Event Bus nunca otorgan permisos.
+- **Comprobaciones:** fingerprint/revisión del especialista existentes, identidad e intento durables, lease vigente y política SQLite operator-owned no revocada ni expirada. La ruta legacy no cambia. Falta de permiso => fail closed.
+- **Pruebas:** `GovernedInferenceBoundaryTest` valida derivación de recurso, denegación sin política y rechazo de identidad incompleta. Ejecutar suite completa en Fedora.
+- **Limitaciones:** **no se implementan** todavía el flujo de aprobación humana, la vinculación durable de revisión de política al handoff, auditoría estructurada, ni certificación multi-JVM/E2E. La comprobación no cancela llamadas HTTP ya iniciadas. No habilitar governed en producción.
+- **Siguiente slice H02-D2C2f.5:** autoridad confiable de aprobación y revocación, fijación inmutable de revisión en el handoff, registro durable de decisiones, pruebas multi-proceso y E2E con revocación. Después H02-D2C3, H02-E/F, V3.1–V3.3.
