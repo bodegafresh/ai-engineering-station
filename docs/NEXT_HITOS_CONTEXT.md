@@ -1389,3 +1389,12 @@ git diff --check
 - **Boundary:** tests **admission fencing only**, not a paused writer between admission and filesystem commit, ownership epochs, hostile database modifications, power loss or cross-store atomicity. Global **NO-GO**.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.13c:** investigate post-admission stale filesystem writer, enforce a scoped invariant or formalize single-writer operational contract, and review certification evidence.
+
+## H02-D2C2f.13c — post-admission stale-owner boundary (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `3985ea3e65dc04b86594fb26a7fdf3b7798644cf` (PR #144 merged).
+- **Implementation:** deterministic two-JVM barrier **after** durable admission. A separate JVM revokes while the first is paused; the old JVM observes the historical admission but cannot obtain another admission. Audit ALLOW count remains one. No filesystem write and no production changes.
+- **Evidence:** `docs/governance/H02-D2C2f-13c-post-admission-evidence.md`.
+- **Security conclusion:** a committed admission survives revocation by design and **is not** a fencing token. The test deliberately does not claim stale filesystem writer exclusion. Keep ambiguous attempts quarantined and do not reassign automatically. **NO-GO** global.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.13d:** test the actual `WorkspaceDocumentationService` post-admission write window using controlled process barriers; decide on filesystem fencing or a reviewed single-writer deployment contract before certification.

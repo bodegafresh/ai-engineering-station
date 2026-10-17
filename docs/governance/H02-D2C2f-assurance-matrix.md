@@ -62,3 +62,9 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 - Independent JVM opens SQLite and pauses at an explicit barrier. A second JVM revokes or admits, then the first resumes. A stale admission must fail; persisted ALLOW/admission count must be zero after revoke, one after prior admission.
 - This proves current-state checking at the **SQLite admission boundary**, not exclusion of a writer already past admission from filesystem or artifact side effects. No lease-epoch fencing token has been added.
 - **NO-GO** for overall production certification. See `docs/governance/H02-D2C2f-13b-stale-jvm-evidence.md`.
+
+## H02-D2C2f.13c — historical admission is not a fencing token (Fedora validation pending)
+
+- Two JVMs exercise a deterministic pause **after** a durable admission and a separate operator revocation. The committed admission remains observable, but a second admission is denied and the ALLOW audit count is one.
+- This demonstrates a residual stale-writer window: admission existence alone does **not** prove that an old JVM cannot write a document after revocation. No filesystem write is exercised by this test.
+- **NO-GO** for global closure; require real publication-path fencing evidence or an approved single-writer operational restriction.
