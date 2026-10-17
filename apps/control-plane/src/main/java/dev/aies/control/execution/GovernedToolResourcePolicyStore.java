@@ -18,6 +18,7 @@ import java.util.Objects;
  */
 public final class GovernedToolResourcePolicyStore implements AutoCloseable {
     private final Connection db;
+    private final Path policyDatabase;
     @FunctionalInterface
     interface CommitObserver { void afterCommit() throws SQLException; }
     private final CommitObserver commitObserver;
@@ -30,6 +31,7 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
     GovernedToolResourcePolicyStore(Path file, CommitObserver observer) throws Exception {
         this.commitObserver = Objects.requireNonNull(observer);
         Path normalized = Objects.requireNonNull(file).toAbsolutePath().normalize();
+        this.policyDatabase = normalized;
         Files.createDirectories(normalized.getParent());
         db = new org.sqlite.JDBC().connect(
             "jdbc:sqlite:" + normalized,
@@ -169,6 +171,13 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
 
     /** Irreversible, idempotent operator revocation. Unknown policies fail closed. */
     public synchronized void revoke(String workflowId, String taskId, String attemptId) throws Exception {
+        // Serialize operator acknowledgement against active governed filesystem publication.
+        try (var publicationGate = GovernedPublicationGate.acquire(policyDatabase)) {
+        revokeUnderGate(workflowId, taskId, attemptId);
+        }
+    }
+
+    private void revokeUnderGate(String workflowId, String taskId, String attemptId) throws Exception {
         begin();
         try {
             try (var p = db.prepareStatement("UPDATE governed_tool_policies SET revoked=1, " +

@@ -135,9 +135,12 @@ public final class WorkspaceDocumentationService {
             }
             // A historical admission alone cannot authorize staging materialization
             // after an operator revocation.
-            authorizeGovernedTool(workflowId, taskId, attemptId,
-                "workspace-documentation", "invoke-model", "ollama:software-engineer");
-            Files.move(staged,expectedOutput,StandardCopyOption.ATOMIC_MOVE);
+            try (var publicationGate = GovernedPublicationGate.acquire(
+                    dataRoot.resolve("governed-tool-policies.sqlite"))) {
+                authorizeGovernedTool(workflowId, taskId, attemptId,
+                    "workspace-documentation", "invoke-model", "ollama:software-engineer");
+                Files.move(staged,expectedOutput,StandardCopyOption.ATOMIC_MOVE);
+            }
             return recoverWritten(workflowId,taskId,attemptId,sourcePath,sourceSha,expectedOutput);
         }
         String objective = "Document this Java source faithfully as Markdown. Include responsibilities, public API and limitations. " +
@@ -182,6 +185,13 @@ public final class WorkspaceDocumentationService {
         // filesystem publication. This narrows the stale-writer window; it is NOT
         // atomic filesystem fencing against a revocation immediately afterward.
         publicationCheckpoint.reached("AFTER_PUBLICATION_ADMISSION");
+        // Recheck only AFTER taking the same cross-JVM gate used by operator revocation.
+        // The gate stays held through the atomic filesystem publication.
+        // These values are needed after the publication gate closes for artifact journaling.
+        Path output;
+        String documentSha;
+        try (var publicationGate = GovernedPublicationGate.acquire(
+                dataRoot.resolve("governed-tool-policies.sqlite"))) {
         authorizeGovernedTool(workflowId, taskId, attemptId,
             "workspace-documentation", "invoke-model", "ollama:software-engineer");
         // Do not allow symlink-based writes in the reserved output tree.
@@ -193,14 +203,14 @@ public final class WorkspaceDocumentationService {
         if (Files.exists(docs, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(docs) || !Files.isDirectory(docs)))
             throw new SecurityException("Unsafe output directory");
         Files.createDirectories(docs);
-        Path output = docs.resolve(workflowId + "-" + taskId + "-" + attemptId + ".md");
+        output = docs.resolve(workflowId + "-" + taskId + "-" + attemptId + ".md");
         if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) throw new FileAlreadyExistsException(output.toString());
         // Journal the material hash before atomic publication; a staged file is
         // recoverable only if its digest matches the durable journal.
         Path staging = docs.resolve(output.getFileName().toString() + ".staging");
         if (Files.exists(staging, LinkOption.NOFOLLOW_LINKS))
             throw new SecurityException("Unjournaled or conflicting staging file");
-        String documentSha = sha256(markdown.getBytes(StandardCharsets.UTF_8));
+        documentSha = sha256(markdown.getBytes(StandardCharsets.UTF_8));
         Files.writeString(staging, markdown, StandardCharsets.UTF_8,
             StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         try(var store=handoff()) {
@@ -213,6 +223,7 @@ public final class WorkspaceDocumentationService {
         authorizeGovernedTool(workflowId, taskId, attemptId,
             "workspace-documentation", "invoke-model", "ollama:software-engineer");
         Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
+        } // Publication/revocation order is now serialized across cooperating JVMs.
         publicationCheckpoint.reached("AFTER_ATOMIC_MOVE");
         var artifact = CommunicationContracts.validate(new CommunicationContracts.Artifact(
             CommunicationContracts.VERSION, workflowId, taskId, "software-engineer", "execution-result", "text/markdown",

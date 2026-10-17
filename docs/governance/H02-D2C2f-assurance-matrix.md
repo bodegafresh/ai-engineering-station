@@ -80,3 +80,9 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 ### H02-D2C2f.13e — post-admission revocation checkpoint
 - Controlled test at `AFTER_PUBLICATION_ADMISSION` with durable policy revoke and assertions for no output/staging and no repeat HTTP call.
 - Scope: one JVM, real service and SQLite, local model fixture; not filesystem fencing, post-journal recovery or two-JVM atomicity. Global NO-GO.
+
+
+### H02-D2C2f.14 — cooperative publication gate (Fedora validation pending)
+- OS advisory `FileLock` and same-JVM fair mutex serialize governed filesystem materialization with operator revocation on a shared local policy database. Recheck under lock closes the earlier recheck-to-move race for cooperating processes.
+- Recovery staging move uses the same gate. No distributed fencing, cross-store transaction, power-loss durability, or noncooperating writer protection is claimed.
+- Pending: Fedora full suite, cross-JVM revoke-first/publish-first and abrupt termination verification. Global NO-GO until evidence is complete.

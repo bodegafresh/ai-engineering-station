@@ -1417,3 +1417,14 @@ git diff --check
 - **Guarantee:** revocation *at the injected checkpoint* is denied by the production recheck before writing. This does not prove atomic fencing or cover revocation after `AFTER_FILE_JOURNAL`.
 - **Validation pending:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationPostAdmissionTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Global:** NO-GO. **Next H02-D2C2f.13f:** deterministic post-journal revocation and staging recovery tests, then enforceable single-writer/fencing design and two-JVM verification.
+
+
+## H02-D2C2f.14 — cooperative cross-JVM publication/revocation gate (Fedora validation pending)
+
+- **Baseline:** `main` SHA `32a07ed7b722841d3969f2e67c973c31facd936b` (PR #147 merged).
+- **Production:** host-local OS `FileLock` + JVM mutex shared by governed document publication and operator `revoke`. After admission, publication acquires the gate, rechecks current authorization under the gate, and holds it through `ATOMIC_MOVE`. Staging recovery takes the same gate and rechecks before materialization. Revocation acquires the gate before its SQLite transaction and releases only after durable commit.
+- **Ordering contract:** if revocation commits first, subsequent publication denies; if publication holds the gate first, revocation acknowledgement waits until after the move. A historical admission alone is never sufficient. The legacy path remains ungated.
+- **Deployment constraints:** single host, local filesystem with reliable advisory locks, all policy revocation and governed document publication must use this implementation and the same canonical policy DB path. No bypass writers, network filesystem, hostile filesystem mutation, cross-store atomicity, power-loss durability, or distributed fencing claim. Lock files must not be removed while processes run.
+- **Tests:** `GovernedPublicationGateTest` tests intra-JVM serialization; existing post-admission revocation test remains valid because its checkpoint occurs before gate acquisition. Two-JVM process interruption and operational verification are required before a global GO.
+- **Evidence:** `docs/governance/H02-D2C2f-14-publication-fencing-evidence.md`. **Global NO-GO pending Fedora regression and cross-JVM acceptance evidence.**
+- **Next:** do not add another recheck-only milestone. Run cross-JVM ordering/crash acceptance, decide whether to formally restrict deployment to one host/local filesystem, and close H02-D2C2f only against an explicit acceptance checklist.
