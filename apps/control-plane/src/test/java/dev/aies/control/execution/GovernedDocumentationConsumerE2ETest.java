@@ -220,6 +220,66 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** Failed audit persistence cannot reserve the model; removing the injected fault permits a safe retry. */
+    @Test void eventBusAuditFailureIsRecoverableWithoutPrematureExternalEffect() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        Path policyFile = root.resolve("journal/governed-tool-policies.sqlite");
+        try (var db = java.sql.DriverManager.getConnection("jdbc:sqlite:" + policyFile);
+             var statement = db.createStatement()) {
+            statement.execute("CREATE TRIGGER fail_allow BEFORE INSERT ON governed_policy_audit " +
+                "WHEN NEW.decision='ALLOW' BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END");
+        }
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls); var bus = new DocumentationBusHarness(f, mock.port())) {
+            assertThrows(java.util.concurrent.ExecutionException.class, () -> bus.request(request(f)));
+            assertEquals(0, calls.get(), "Audit failure must precede any HTTP effect");
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+            try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+                assertTrue(handoff.effect(WF, TASK, f.token()).isEmpty(),
+                    "Audit failure must not reserve a model invocation");
+            }
+            try (var db = java.sql.DriverManager.getConnection("jdbc:sqlite:" + policyFile);
+                 var statement = db.createStatement()) {
+                statement.execute("DROP TRIGGER fail_allow");
+            }
+            JsonObject completed = bus.request(request(f));
+            assertEquals("EVIDENCE_PENDING", completed.getString("status"));
+            assertEquals(1, calls.get());
+            JsonObject replay = bus.request(request(f));
+            assertEquals(Boolean.TRUE, replay.getBoolean("replayed"));
+            assertEquals(1, calls.get(), "Retry and replay must not duplicate HTTP");
+        }
+    }
+
+    /** Concurrent Event Bus requests are serialized by durable model invocation reservation. */
+    @Test void concurrentEventBusDeliveriesCannotDoubleInvokeModel() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls); var bus = new DocumentationBusHarness(f, mock.port())) {
+            var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+            var start = new java.util.concurrent.CountDownLatch(1);
+            try {
+                java.util.concurrent.Callable<Boolean> delivery = () -> {
+                    start.await();
+                    try { bus.request(request(f)); return true; }
+                    catch (java.util.concurrent.ExecutionException expectedConflict) { return false; }
+                };
+                var a = pool.submit(delivery);
+                var b = pool.submit(delivery);
+                start.countDown();
+                boolean first = a.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                boolean second = b.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                assertTrue(first || second, "At least one delivery must complete");
+                assertEquals(1, calls.get(), "Only one durable invocation may cross HTTP");
+            } finally {
+                pool.shutdownNow();
+                assertTrue(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
