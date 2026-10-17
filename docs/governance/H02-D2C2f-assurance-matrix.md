@@ -48,3 +48,11 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 
 - Real CDI replay must reject altered published file and mismatched persisted journal digest without new HTTP calls.
 - **Limits:** coordinated file+DB tampering, compromised privileged writer, fencing and power-loss durability unproven. **NO-GO** overall.
+
+
+## H02-D2C2f.13a — SQLite admission contention and fencing boundary (Fedora validation pending)
+
+- Two independent connections race to admit one attempt; test requires one winner, one denial and one durable ALLOW audit.
+- This only exercises transactional SQLite admission, **not** a monotonic filesystem fencing token or a two-JVM stale-owner scenario.
+- Operator runbook and threat model: `docs/governance/H02-D2C2f-13a-concurrency-evidence.md`.
+- Global certification remains **NO-GO** until missing properties are proven or explicitly excluded by a reviewed operational contract.

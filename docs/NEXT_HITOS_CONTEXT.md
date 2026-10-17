@@ -1370,3 +1370,13 @@ git diff --check
 - **Limitations:** does not cover coordinated evidence replacement, malicious DB writer, full cross-JVM fencing, power loss or cross-store atomicity. **NO-GO** for H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusPositiveTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.13a:** adversarial cross-process fencing and coordinated evidence tamper threat model, production runbook, ADR and bounded certification verdict.
+
+
+## H02-D2C2f.13a — bounded SQLite contention and recovery runbook (Fedora validation pending)
+
+- **Baseline:** `main` SHA `512aa11f5d2e4b3c164d22a845d11536cfd99685` (PR #142 merged).
+- **Implementation:** `GovernedPublicationConcurrentAdmissionTest` races two independent SQLite connections on the same admission; assert one successful admission and one durable ALLOW audit. No production changes.
+- **Evidence and runbook:** `docs/governance/H02-D2C2f-13a-concurrency-evidence.md` documents the stale-owner threat model, non-leased invocation reservation and manual fail-closed recovery.
+- **Limits:** this is **not** a two-JVM fencing test; filesystem stale-writer exclusion, power-loss durability and cross-store atomicity remain unproven. Overall **NO-GO**.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationConcurrentAdmissionTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.13b:** real two-JVM stale-owner/resume scenario, fencing ADR and enforcement or explicit operational restriction; formal evidence-based certification review.
