@@ -1314,3 +1314,13 @@ git diff --check
 - **Limits:** concurrent **completed replay** is not concurrent **unfinished recovery**. SQLite COMMIT fault injection, negative CDI, writer fencing and power-loss durability remain unproven. **NO-GO** for overall H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12u:** concurrent unfinished recovery across JVMs, deterministic COMMIT failure injection, production coordination/fencing if needed, negative CDI matrix and assurance review.
+
+
+## H02-D2C2f.12u — Independent-JVM unfinished recovery contention (bounded diagnostic; Fedora validation pending)
+
+- **Baseline:** `main` SHA `77fbb31ff936721222ef763b887f68fba8c1f600`, PR #136 merged (12t).
+- **Implementation:** `GovernedDocumentationRecoveryRaceChild` and `twoJvmCompeteToRecoverUnfinishedPublication` launch two real JVM contenders behind a shared file gate after each abrupt-crash checkpoint. Require at least one successful recovery, valid final replay/hash and no extra model HTTP.
+- **Evidence:** `docs/governance/H02-D2C2f-12u-race-scope.md` documents tested and untested guarantees. Production remains unchanged.
+- **Limitations:** gate release does not guarantee simultaneous file operations; losing contender may fail. No deterministic COMMIT fault injection, negative CDI matrix or power-loss certification. **NO-GO** for H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12v:** diagnose any race failures, add production coordination/fencing if required, deterministic SQLite COMMIT fault injection, negative CDI and update assurance/ADR before closure review.

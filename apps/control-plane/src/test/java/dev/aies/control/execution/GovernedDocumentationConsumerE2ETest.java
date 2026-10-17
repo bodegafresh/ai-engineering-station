@@ -613,6 +613,57 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** 12u: two independent JVMs contend for recovery of the same unfinished effect. */
+    @Test void twoJvmCompeteToRecoverUnfinishedPublication() throws Exception {
+        for (String checkpoint : List.of("AFTER_FILE_JOURNAL", "AFTER_ATOMIC_MOVE",
+                "AFTER_ARTIFACT_APPEND")) {
+            Path previousRoot = root;
+            root = Files.createDirectory(previousRoot.resolve("race_" + checkpoint));
+            try {
+                Fixture f = fixture();
+                approve(f, List.of(read(), invoke()));
+                AtomicInteger calls = new AtomicInteger();
+                try (var mock = new MockModel(calls)) {
+                    Process crash = startDocumentationChild(
+                        GovernedDocumentationProcessCrashChild.class, f, mock.port(), checkpoint);
+                    assertEquals(73, awaitDocumentationChild(crash));
+                    assertEquals(1, calls.get());
+                    Path gate = root.resolve("recovery-start.gate");
+                    Process a = startDocumentationChild(
+                        GovernedDocumentationRecoveryRaceChild.class, f, mock.port(), gate.toString());
+                    Process b = startDocumentationChild(
+                        GovernedDocumentationRecoveryRaceChild.class, f, mock.port(), gate.toString());
+                    try {
+                        Files.writeString(gate, "start", StandardCharsets.UTF_8);
+                        int first = awaitRecoveryContender(a);
+                        int second = awaitRecoveryContender(b);
+                        assertTrue(first == 0 || second == 0,
+                            "At least one contender must recover unfinished material");
+                    } finally {
+                        if (a.isAlive()) a.destroyForcibly().waitFor();
+                        if (b.isAlive()) b.destroyForcibly().waitFor();
+                    }
+                    assertEquals(1, calls.get(), "Recovery must not reinvoke model");
+                    JsonObject replay = service(f, mock.port()).generate(request(f));
+                    assertEquals(Boolean.TRUE, replay.getBoolean("replayed"));
+                    assertEquals(1, calls.get());
+                    assertEquals(replay.getString("documentSha256"),
+                        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                            Files.readAllBytes(root.resolve(replay.getString("documentPath"))))));
+                }
+            } finally { root = previousRoot; }
+        }
+    }
+
+    private static int awaitRecoveryContender(Process process) throws Exception {
+        assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS),
+            "Recovery contender timeout");
+        int code = process.exitValue();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(code == 0 || code == 1, "Unexpected recovery exit " + code + ": " + output);
+        return code;
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
