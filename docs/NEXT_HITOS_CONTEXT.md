@@ -1304,3 +1304,13 @@ git diff --check
 - **Limits:** This is policy ordering, **not concurrent document recovery**. No SQLite COMMIT fault injection, negative CDI matrix, cross-store atomicity or fsync/power-loss certification. No production changes. **NO-GO** for H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12t:** independent-JVM concurrent document recovery and deterministic SQLite COMMIT failure injection; update certification matrix and decide on production fencing fixes.
+
+
+## H02-D2C2f.12t — Independent-JVM crash recovery and concurrent completed replay (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `2c96374e8e7f2027195c2add53ab12e86b5bb96b`, PR #135 merged (12s).
+- **Implementation:** test-only `GovernedDocumentationRecoveryChild` and new `GovernedDocumentationConsumerE2ETest` scenarios: distinct child JVM recovers after each of `AFTER_FILE_JOURNAL`, `AFTER_ATOMIC_MOVE`, `AFTER_ARTIFACT_APPEND`; two JVMs concurrently replay an already completed attempt; HTTP count stays at one, durable artifact ID remains stable.
+- **Evidence:** `docs/governance/H02-D2C2f-12t-recovery-evidence.md` documents tested boundaries and outstanding gaps. No production or default-flag changes.
+- **Limits:** concurrent **completed replay** is not concurrent **unfinished recovery**. SQLite COMMIT fault injection, negative CDI, writer fencing and power-loss durability remain unproven. **NO-GO** for overall H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12u:** concurrent unfinished recovery across JVMs, deterministic COMMIT failure injection, production coordination/fencing if needed, negative CDI matrix and assurance review.

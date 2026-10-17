@@ -538,6 +538,81 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** 12t: after a real crash, a different JVM must recover without a second model request. */
+    @Test void separateJvmRecoversAfterAbruptCrashAtEveryPublicationBoundary() throws Exception {
+        for (String checkpoint : List.of("AFTER_FILE_JOURNAL", "AFTER_ATOMIC_MOVE", "AFTER_ARTIFACT_APPEND")) {
+            Path previousRoot = root;
+            root = Files.createDirectory(previousRoot.resolve("child_recovery_" + checkpoint));
+            try {
+                Fixture f = fixture();
+                approve(f, List.of(read(), invoke()));
+                AtomicInteger calls = new AtomicInteger();
+                try (var mock = new MockModel(calls)) {
+                    var crash = startDocumentationChild(
+                        GovernedDocumentationProcessCrashChild.class, f, mock.port(), checkpoint);
+                    assertEquals(73, awaitDocumentationChild(crash),
+                        "Crash subprocess missed checkpoint " + checkpoint);
+                    assertEquals(1, calls.get());
+                    var recover = startDocumentationChild(
+                        GovernedDocumentationRecoveryChild.class, f, mock.port());
+                    assertEquals(0, awaitDocumentationChild(recover),
+                        "Recovery subprocess failed " + checkpoint);
+                    assertEquals(1, calls.get(), "Recovery in a different JVM must not reinvoke HTTP");
+                    var replay = service(f, mock.port()).generate(request(f));
+                    assertEquals(Boolean.TRUE, replay.getBoolean("replayed"));
+                    assertEquals(1, calls.get());
+                }
+            } finally { root = previousRoot; }
+        }
+    }
+
+    /** Two independent JVMs replaying an already completed attempt must not invoke HTTP. */
+    @Test void twoJvmConcurrentReplayUsesOneDurableArtifact() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            JsonObject first = service(f, mock.port()).generate(request(f));
+            assertEquals(1, calls.get());
+            var a = startDocumentationChild(GovernedDocumentationRecoveryChild.class, f, mock.port());
+            var b = startDocumentationChild(GovernedDocumentationRecoveryChild.class, f, mock.port());
+            assertEquals(0, awaitDocumentationChild(a));
+            assertEquals(0, awaitDocumentationChild(b));
+            assertEquals(1, calls.get(), "Two JVM replays must not invoke model");
+            var again = service(f, mock.port()).generate(request(f));
+            assertEquals(first.getString("artifactRecordId"), again.getString("artifactRecordId"));
+            assertEquals(Boolean.TRUE, again.getBoolean("replayed"));
+        }
+    }
+
+    private Process startDocumentationChild(Class<?> type, Fixture f, int port, String... extra) throws Exception {
+        var command = new java.util.ArrayList<String>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("-cp");
+        command.add(subprocessClasspath());
+        command.add(type.getName());
+        command.add(root.toString());
+        command.add(Integer.toString(port));
+        command.add(f.token());
+        command.add(f.sourceSha());
+        command.addAll(java.util.Arrays.asList(extra));
+        return new ProcessBuilder(command).redirectErrorStream(true).start();
+    }
+
+    private static int awaitDocumentationChild(Process process) throws Exception {
+        try {
+            assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS),
+                "Documentation child process timeout");
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            int code = process.exitValue();
+            assertTrue(code == 0 || code == 73,
+                "Unexpected child exit " + code + ": " + output);
+            return code;
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
