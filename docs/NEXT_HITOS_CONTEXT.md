@@ -1181,3 +1181,21 @@ git diff --check
 - **Límites:** el consumidor se configura mediante harness Vert.x, sin arranque completo de Quarkus/CDI; el fallo se inyecta en el INSERT de auditoría, no durante COMMIT ni tras el envío HTTP; no se afirma cancelación de HTTP ya iniciado, exactamente-once distribuido ni cierre de H02-D2C2f. Gobernanza continúa deshabilitada por defecto. Sin cambios de producción.
 - **Validación obligatoria:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`; comprobar reportes JUnit antes de PR.
 - **Siguiente H02-D2C2f.12h:** integración Quarkus/CDI mediante `@QuarkusTest` con configuración aislada, fallos transaccionales post-reserva, carrera revocación/HTTP con barreras deterministas y reconciliación explícita de estados ambiguos. Después revisión formal de cierre H02-D2C2f y transición a H02-D2C3 observabilidad/shadow/rollback.
+
+## H02-D2C2f.12h — Revocación durante HTTP y reserva ambigua durable (slice 1; validación Fedora pendiente)
+
+- **Baseline:** `main` SHA `eb1d9c0ad533f024338606c9d1de6114d038890f`, posterior al PR #123 (12g).
+- **Implementación:** dos pruebas de integración en `GovernedDocumentationConsumerE2ETest`. Un servidor HTTP loopback mantiene la respuesta pendiente mediante `CountDownLatch`; el operador revoca la política mientras HTTP está en vuelo y, tras liberar la respuesta, el servicio rechaza la publicación, mantiene reserva durable ambigua y no reintenta. Otro caso simula una reserva persistida antes de recibir respuesta: la recuperación rechaza una segunda invocación sin tocar HTTP.
+- **Garantías acotadas:** revocación posterior al envío no cancela el efecto HTTP externo, pero impide publicación del resultado y posteriores reintentos; la reserva ambigua se conserva como `AMBIGUOUS_INVOCATION`; ninguna ejecución duplicada automática.
+- **Límites:** sin arranque CDI de Quarkus ni `@QuarkusTest`; sin crash real del proceso ni fallo inyectado durante COMMIT SQLite; las pruebas usan servicio real, SQLite y HTTP mock, no un runtime distribuido. No se declara cierre de H02-D2C2f ni exactamente-once distribuido. Flags de gobernanza permanecen deshabilitados por defecto. Sin cambios de producción.
+- **Validación Fedora obligatoria:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Inspeccionar JUnit y flakiness antes de PR.
+- **Siguiente H02-D2C2f.12i:** `@QuarkusTest` con CDI y configuración aislada real, inyección transaccional post-reserva y pruebas de recuperación tras reinicio; matriz de cierre de H02-D2C2f antes de H02-D2C3 (observabilidad, shadow y rollback).
+
+### H02-D2C2f.12h — Corrección de seguridad detectada durante validación Fedora
+
+- **Hallazgo:** la prueba de revocación durante HTTP identificó que `WorkspaceDocumentationService` revalidaba el intento gobernado después de recibir la respuesta del modelo, pero no volvía a comprobar la política operator-owned. Una revocación durante la invocación podía permitir continuar hacia la publicación.
+- **Corrección de producción:** se incorporó una nueva llamada a `authorizeGovernedTool` después de `model.execute(request)` y antes de crear los archivos de salida. La autorización consulta nuevamente la política SQLite y registra la decisión de auditoría.
+- **Garantía certificada:** cuando la política se revoca mientras el servidor HTTP simulado retiene la respuesta, la operación es denegada antes de publicar el documento. La reserva durable permanece registrada y no se repite automáticamente la invocación.
+- **Validación Fedora:** prueba focalizada `BUILD SUCCESSFUL` (12 s); suite completa `BUILD SUCCESSFUL` (32 s).
+- **Límite residual:** esta comprobación no elimina completamente la carrera entre la última autorización y la publicación material. El cierre de esa ventana requiere coordinación transaccional o un mecanismo de fencing adecuado. Tampoco certifica el arranque completo Quarkus/CDI.
+- **Próximo incremento H02-D2C2f.12i:** integración Quarkus/CDI, pruebas de recuperación tras reinicio, fallos transaccionales y diseño de fencing para publicación.

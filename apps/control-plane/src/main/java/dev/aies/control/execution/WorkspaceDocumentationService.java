@@ -151,6 +151,10 @@ public final class WorkspaceDocumentationService {
         if (markdown == null || markdown.isBlank() || markdown.length() > 131072) throw new IllegalStateException("Invalid document");
         try(var store=handoff()) {store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);}
         revalidateGoverned(workflowId,taskId,attemptId);
+        // H02-D2C2f.12h: recheck the durable policy after HTTP.
+        // A revocation while the model was running must deny publication.
+        authorizeGovernedTool(workflowId, taskId, attemptId,
+            "workspace-documentation", "invoke-model", "ollama:software-engineer");
         // Do not allow symlink-based writes in the reserved output tree.
         Path aies = root.resolve(".aies");
         if (Files.exists(aies, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(aies) || !Files.isDirectory(aies)))
