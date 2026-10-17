@@ -58,6 +58,22 @@ class GovernedToolResourcePolicyStoreTest {
             assertTrue(store.evaluate(request(GRANT.resource()),7,Instant.now()).allowed());
         }
     }
+    @Test void recoveryFenceIsAbsentUntilDurableAdmissionAndSurvivesRestart() throws Exception {
+        Path db = temp.resolve("recovery-policy.sqlite");
+        try (var store = new GovernedToolResourcePolicyStore(db)) {
+            store.approve(policy());
+            assertFalse(store.publicationAdmitted("wf", "task", "attempt"));
+            store.admitPublication(request(GRANT.resource()));
+            assertTrue(store.publicationAdmitted("wf", "task", "attempt"));
+        }
+        try (var reopened = new GovernedToolResourcePolicyStore(db)) {
+            assertTrue(reopened.publicationAdmitted("wf", "task", "attempt"));
+            reopened.revoke("wf", "task", "attempt");
+            assertTrue(reopened.publicationAdmitted("wf", "task", "attempt"),
+                "Revocation after admission must not erase committed publication order");
+            assertFalse(reopened.publicationAdmitted("wf", "task", "unknown"));
+        }
+    }
     @Test void expiryAndAttemptMismatchFailClosed() throws Exception {
         try (var store = new GovernedToolResourcePolicyStore(temp.resolve("policy.sqlite"))) {
             store.approve(policy());
