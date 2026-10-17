@@ -1262,3 +1262,14 @@ git diff --check
 - **Scope limitations:** `Runtime.halt` is an abrupt JVM termination, not power-loss simulation or a guarantee of filesystem fsync/SQLite crash consistency; the parent JVM continues to run. SQLite and filesystem are not atomically committed together. The external HTTP request is observed exactly once in this fixture, not globally exactly-once. No automated recovery is claimed for an ambiguous reserved invocation before durable file journal. H02-D2C2f remains open.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Confirm child classpath and subprocess exit behavior on Fedora before PR.
 - **Next H02-D2C2f.12p:** formal governance closure matrix and ADR covering durable admission/revocation ordering, crash boundaries, residual SQLite/fsync risks, legacy compatibility, negative CDI scenarios, and an explicit go/no-go decision for H02-D2C3 observability/shadow/rollback.
+
+
+## H02-D2C2f.12p — Formal governance assurance review (NO-GO for closure; Fedora validation pending)
+
+- **Baseline:** `main` SHA `6644338821a9571de2b90bfae0b37676cf0b95ce`, PR #131 merged (12o).
+- **Artifacts:** `docs/adr/H02-D2C2f-12p-governance-certification.md` and `docs/governance/H02-D2C2f-assurance-matrix.md` enumerate tested invariants, failure semantics, evidence pointers, missing scenarios, residual risks and explicit release gates.
+- **Static gate:** `python3 scripts/check-governance-12p.py` verifies required artifacts and production anchors. It is not a substitute for dynamic tests or a security audit.
+- **Decision:** **GO** to merge the bounded audit after review and Fedora tests; **NO-GO** to close H02-D2C2f or enable additional privileged effects. Positive CDI, deterministic crash and separate-JVM tests are bounded evidence, not power-loss/fsync, cross-store atomicity or globally exactly-once proof.
+- **No production changes:** no feature flags, runtime behavior or operator policy changes in this slice.
+- **Validation:** `python3 scripts/check-governance-12p.py`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Attach test report and CI evidence before PR.
+- **Next H02-D2C2f.12q:** implement negative CDI, concurrent recovery/revocation and SQLite COMMIT fault matrix; draft operator runbook; revisit the NO-GO decision with measured evidence before H02-D2C3.
