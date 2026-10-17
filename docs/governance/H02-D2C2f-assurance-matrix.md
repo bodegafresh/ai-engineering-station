@@ -75,3 +75,8 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 - Production now revalidates operator-owned governed authorization after admission, immediately before final atomic file move, and before recovery staging move.
 - The policy read and filesystem move are not one transaction; revocation between them remains a possible race. No ownership epoch or filesystem fencing is claimed.
 - Evidence: `docs/governance/H02-D2C2f-13d-publication-recheck-evidence.md`. Overall **NO-GO**.
+
+
+### H02-D2C2f.13e — post-admission revocation checkpoint
+- Controlled test at `AFTER_PUBLICATION_ADMISSION` with durable policy revoke and assertions for no output/staging and no repeat HTTP call.
+- Scope: one JVM, real service and SQLite, local model fixture; not filesystem fencing, post-journal recovery or two-JVM atomicity. Global NO-GO.

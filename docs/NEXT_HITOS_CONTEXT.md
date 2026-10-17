@@ -1408,3 +1408,12 @@ git diff --check
 - **Safety boundary:** bounded revocation checks, NOT atomic fencing: revocation may commit after the last check and before the filesystem move. Existing admitted attempts retain historical admission. Recovery with revocation now fails closed before staging materialization. No automatic retries of ambiguous model calls. **NO-GO** globally.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentation*' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.13e:** deterministic real CDI post-admission revocation and staging recovery negative tests; evaluate OS-level single-writer exclusion or enforceable fencing for atomicity at publication boundary.
+
+
+## H02-D2C2f.13e — deterministic post-admission revocation test (Fedora validation pending)
+
+- **Baseline:** `main` SHA `e55917e6c070e4c2e2b765e82059ba3cf6742b67` (PR #146 merged).
+- **Test:** isolated governed CDI fixture, real local HTTP model response, durable SQLite admission, synchronous revocation at `AFTER_PUBLICATION_ADMISSION`, and negative assertions for document/staging materialization and repeat model calls.
+- **Guarantee:** revocation *at the injected checkpoint* is denied by the production recheck before writing. This does not prove atomic fencing or cover revocation after `AFTER_FILE_JOURNAL`.
+- **Validation pending:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationPostAdmissionTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Global:** NO-GO. **Next H02-D2C2f.13f:** deterministic post-journal revocation and staging recovery tests, then enforceable single-writer/fencing design and two-JVM verification.
