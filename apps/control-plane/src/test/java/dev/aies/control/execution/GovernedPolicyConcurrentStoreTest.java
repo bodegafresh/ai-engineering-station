@@ -19,6 +19,8 @@ class GovernedPolicyConcurrentStoreTest {
             1,Instant.parse("2099-01-01T00:00:00Z"),false,List.of(grant));
         var second=new GovernedToolResourcePolicy.Snapshot("wf","task","attempt","engineer","1.0",
             2,Instant.parse("2099-01-01T00:00:00Z"),false,List.of(grant));
+        // Initialize WAL schema before competing writes; DDL setup is not part of the race.
+        try(var initialized=new GovernedToolResourcePolicyStore(db)) { }
         var start=new CountDownLatch(1);
         try(var executor=Executors.newFixedThreadPool(2)) {
             var a=executor.submit(()->attempt(db,first,start));
