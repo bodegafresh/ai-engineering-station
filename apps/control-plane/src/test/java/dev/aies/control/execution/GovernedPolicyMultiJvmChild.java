@@ -62,6 +62,19 @@ public final class GovernedPolicyMultiJvmChild {
                     catch (SecurityException denied) { System.out.println("DENIED"); }
                 }
             }
+            case "approveThenWaitForKill" -> {
+                // Persist approval first, then signal the parent. The child never binds
+                // policy_revision: this reproduces the real two-store crash window.
+                try (var policies=new GovernedToolResourcePolicyStore(policyPath)) {
+                    policies.approve(new GovernedToolResourcePolicy.Snapshot(WF,TASK,token,
+                        "software-engineer","1.0",42,Instant.parse("2099-01-01T00:00:00Z"),
+                        false,List.of(GRANT)));
+                }
+                Files.writeString(coordination.resolve("approved.ready"),"durable");
+                long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+                while(System.nanoTime()<deadline) Thread.sleep(50);
+                throw new IllegalStateException("Expected parent to terminate this child");
+            }
             default -> throw new IllegalArgumentException("Unknown action: "+action);
         }
     }
