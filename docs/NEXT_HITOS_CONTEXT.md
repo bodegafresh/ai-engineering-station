@@ -1048,3 +1048,13 @@ git diff --check
 - **Pruebas:** `GovernedInferenceBoundaryTest` valida derivación de recurso, denegación sin política y rechazo de identidad incompleta. Ejecutar suite completa en Fedora.
 - **Limitaciones:** **no se implementan** todavía el flujo de aprobación humana, la vinculación durable de revisión de política al handoff, auditoría estructurada, ni certificación multi-JVM/E2E. La comprobación no cancela llamadas HTTP ya iniciadas. No habilitar governed en producción.
 - **Siguiente slice H02-D2C2f.5:** autoridad confiable de aprobación y revocación, fijación inmutable de revisión en el handoff, registro durable de decisiones, pruebas multi-proceso y E2E con revocación. Después H02-D2C3, H02-E/F, V3.1–V3.3.
+
+
+## H02-D2C2f.5 — Provisión de políticas por operador (slice 1: endpoint opt-in)
+
+- **Base:** `main` posterior a H02-D2C2f.4. Nuevo `GovernedPolicyOperatorResource` con endpoints `POST /api/v1/execution/governed-policies/approve` y `POST /api/v1/execution/governed-policies/{workflowId}/{taskId}/{attemptId}/revoke`.
+- **Autoridad:** ambos endpoints reutilizan `WorkspaceOperatorAuthorizer` y están cerrados por defecto mediante `aies.execution.governed-policy-operator.enabled=false`. Requieren credencial del operador; jamás aceptan un mensaje Event Bus como aprobación.
+- **Aprobación:** el operador proporciona identidad completa, capability, fingerprint, revisión de registro, revisión de política, caducidad y grants exactos. Antes de persistir se verifica el `GovernedAttempt` en `ExecutionHandoffStore`; `GovernedToolResourcePolicyStore` conserva inmutabilidad, idempotencia y denegación por defecto. Revocación durable e irreversible.
+- **Pruebas:** test del contrato de grants y snapshots; se requiere validar en Fedora la suite completa y probar manualmente con token válido e inválido, intento inexistente y revocación.
+- **Limitaciones:** este slice **NO** implementa todavía la vinculación inmutable de revisión al handoff, auditoría durable de cada decisión, autenticación diferenciada por roles, tests E2E reales, ni certificación multi-JVM. `WorkspaceOperatorAuthorizer` reutiliza el token configurado para workspace changes. No habilitar producción hasta cerrar estas brechas.
+- **Siguiente slice H02-D2C2f.6:** persistir revisión de política en handoff, añadir auditoría estructurada y pruebas de revocación multi-proceso/E2E; después H02-D2C3.
