@@ -1343,3 +1343,12 @@ git diff --check
 - **Limits:** not actual JDBC COMMIT exception injection; revocation/tampering CDI cases remain incomplete; no production fencing or power-loss certification. **NO-GO** for H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusPositiveTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12x:** actual COMMIT-boundary fault seam with read-after-unknown reconciliation, CDI revocation and evidence-tamper negatives, explicit production fencing decision, certification matrix/ADR review.
+
+## H02-D2C2f.12x — COMMIT acknowledgement ambiguity (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `2f5af86fca2f8b7372f7567aaf767f3ff482ce37`, PR #139 merged.
+- **Implementation:** package-private post-COMMIT observer in `GovernedToolResourcePolicyStore`; `GovernedPublicationCommitBoundaryTest` checks durable reconciliation and duplicate denial.
+- **Evidence:** `docs/governance/H02-D2C2f-12x-commit-evidence.md` and assurance matrix.
+- **Limits:** no inside-COMMIT fault, power-loss or cross-store atomicity proof; negative CDI revocation/tamper and fencing remain incomplete. **NO-GO** overall.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationCommitBoundaryTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12y:** CDI revocation/tamper with isolated fixtures, fencing decision, runbook and evidence-based GO/NO-GO.

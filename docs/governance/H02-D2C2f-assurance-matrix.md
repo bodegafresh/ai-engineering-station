@@ -32,3 +32,8 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 - `GovernedDocumentationQuarkusPositiveTest` still verifies successful governed generation and idempotent replay.
 - These tests cover input and authorization boundaries, **not** every revocation/tampering variant. CDI matrix remains partial.
 - Actual JDBC `COMMIT` exception injection, filesystem durability and full cross-store atomicity remain unproven. Overall closure remains **NO-GO**.
+
+## H02-D2C2f.12x — COMMIT acknowledgement ambiguity (Fedora validation pending)
+
+- Real COMMIT followed by injected SQLException; durable read confirms one admission and one ALLOW audit, duplicate denied.
+- No inside-COMMIT failure, power-loss durability, complete CDI negatives or fencing proof. **NO-GO** overall.
