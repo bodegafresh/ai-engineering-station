@@ -1077,3 +1077,12 @@ git diff --check
 - **Pruebas:** `GovernedPolicyAuditJournalTest` verifica persistencia tras reinicio, replay, ALLOW, DENY, revisión incorrecta, revocación y ausencia de política.
 - **Limitaciones:** la verificación de identidad/lease y el enlace de revisión ocurren en otro store y todavía no se auditan como eventos DENY; no se certifica la revocación durante una llamada externa iniciada. Pendiente integración E2E HTTP y pruebas multi-JVM. No habilitar governed en producción.
 - **Siguiente slice H02-D2C2f.8:** auditar todas las denegaciones pre-evaluación, pruebas HTTP de credenciales y permisos, migración/replay multi-proceso y certificación E2E. Después H02-D2C3.
+
+## H02-D2C2f.8 — Auditoría de denegaciones tempranas (slice 1)
+
+- Baseline: `main` tras H02-D2C2f.7.
+- `GovernedToolResourcePolicyStore` registra eventos `PRECHECK/DENY` para política inexistente, identidad de intento incorrecta y rechazo de la validación del handoff (lease/revisión/identidad).
+- Los motivos de handoff se agrupan en `HANDOFF_REJECTED` para no filtrar detalles de estado interno. La escritura del journal es obligatoria y no convierte una denegación en autorización.
+- Pruebas `GovernedPolicyEarlyDenialAuditTest`: falta de política, identidad incorrecta, intento sin revisión vinculada, persistencia del registro.
+- **Alcance limitado:** las excepciones SQL/IO durante el handoff no se clasifican como denegaciones de seguridad; siguen abortando la ejecución. No hay certificación HTTP ni multi-JVM ni E2E en este slice. No activar en producción.
+- Próximo slice H02-D2C2f.9: pruebas HTTP del operador, recuperación, migración, concurrencia y E2E real. Luego H02-D2C3.

@@ -129,9 +129,17 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
             !attempt.taskId().equals(request.taskId()) ||
             !attempt.attemptId().equals(request.attemptId()) ||
             !attempt.specialistId().equals(request.specialistId()) ||
-            !attempt.version().equals(request.specialistVersion()))
+            !attempt.version().equals(request.specialistVersion())) {
+            auditDenial(request, revision, "ATTEMPT_IDENTITY_MISMATCH");
             throw new SecurityException("Attempt identity mismatch");
-        handoff.requireGovernedPolicyRevision(attempt, revision);
+        }
+        try {
+            handoff.requireGovernedPolicyRevision(attempt, revision);
+        } catch (SecurityException denied) {
+            // Deliberately coarse reason: do not expose lease or identity details.
+            auditDenial(request, revision, "HANDOFF_REJECTED");
+            throw denied;
+        }
         var decision = evaluate(request, revision, Instant.now());
         if (!decision.allowed()) throw new SecurityException("Tool authorization denied: " + decision.denial());
     }
@@ -145,7 +153,10 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
         Objects.requireNonNull(attempt);
         Objects.requireNonNull(request);
         var current = read(attempt.workflowId(), attempt.taskId(), attempt.attemptId());
-        if (current == null) throw new SecurityException("Missing operator-approved tool policy");
+        if (current == null) {
+            auditDenial(request, null, "MISSING_POLICY");
+            throw new SecurityException("Missing operator-approved tool policy");
+        }
         requireAuthorized(handoff, attempt, request, current.policyRevision());
     }
 
@@ -172,6 +183,13 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                     revision,expires,revoked,grants);
             }
         }
+    }
+
+    /** Denials before policy evaluation are durable too; audit failure still denies. */
+    private void auditDenial(GovernedToolResourcePolicy.Request request, Long revision,
+                             String reason) throws SQLException {
+        audit("PRECHECK", request.workflowId(), request.taskId(), request.attemptId(),
+            revision, request.tool(), request.action(), request.resource(), "DENY", reason);
     }
 
     /** Append-only audit. Failure to persist an ALLOW throws, never grants access. */
