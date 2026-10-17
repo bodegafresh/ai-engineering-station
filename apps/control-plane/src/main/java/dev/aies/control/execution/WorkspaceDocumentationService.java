@@ -133,6 +133,10 @@ public final class WorkspaceDocumentationService {
                     throw new SecurityException("Staging hash or journal mismatch");
                 store.requireActiveDocumentation(workflowId,taskId,attemptId,sourcePath,sourceSha);
             }
+            // A historical admission alone cannot authorize staging materialization
+            // after an operator revocation.
+            authorizeGovernedTool(workflowId, taskId, attemptId,
+                "workspace-documentation", "invoke-model", "ollama:software-engineer");
             Files.move(staged,expectedOutput,StandardCopyOption.ATOMIC_MOVE);
             return recoverWritten(workflowId,taskId,attemptId,sourcePath,sourceSha,expectedOutput);
         }
@@ -174,6 +178,12 @@ public final class WorkspaceDocumentationService {
                 policy.admitPublication(publicationRequest);
             }
         }
+        // 13d: an operator may revoke the policy after SQLite admission and before
+        // filesystem publication. This narrows the stale-writer window; it is NOT
+        // atomic filesystem fencing against a revocation immediately afterward.
+        publicationCheckpoint.reached("AFTER_PUBLICATION_ADMISSION");
+        authorizeGovernedTool(workflowId, taskId, attemptId,
+            "workspace-documentation", "invoke-model", "ollama:software-engineer");
         // Do not allow symlink-based writes in the reserved output tree.
         Path aies = root.resolve(".aies");
         if (Files.exists(aies, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(aies) || !Files.isDirectory(aies)))
@@ -198,6 +208,10 @@ public final class WorkspaceDocumentationService {
                 root.relativize(output).toString(),documentSha);
         }
         publicationCheckpoint.reached("AFTER_FILE_JOURNAL");
+        // Recheck the durable operator policy immediately before materialization.
+        // The check and filesystem move remain separate operations.
+        authorizeGovernedTool(workflowId, taskId, attemptId,
+            "workspace-documentation", "invoke-model", "ollama:software-engineer");
         Files.move(staging, output, StandardCopyOption.ATOMIC_MOVE);
         publicationCheckpoint.reached("AFTER_ATOMIC_MOVE");
         var artifact = CommunicationContracts.validate(new CommunicationContracts.Artifact(

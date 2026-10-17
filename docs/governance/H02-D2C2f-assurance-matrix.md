@@ -68,3 +68,10 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 - Two JVMs exercise a deterministic pause **after** a durable admission and a separate operator revocation. The committed admission remains observable, but a second admission is denied and the ALLOW audit count is one.
 - This demonstrates a residual stale-writer window: admission existence alone does **not** prove that an old JVM cannot write a document after revocation. No filesystem write is exercised by this test.
 - **NO-GO** for global closure; require real publication-path fencing evidence or an approved single-writer operational restriction.
+
+
+## H02-D2C2f.13d — publication rechecks (Fedora validation pending)
+
+- Production now revalidates operator-owned governed authorization after admission, immediately before final atomic file move, and before recovery staging move.
+- The policy read and filesystem move are not one transaction; revocation between them remains a possible race. No ownership epoch or filesystem fencing is claimed.
+- Evidence: `docs/governance/H02-D2C2f-13d-publication-recheck-evidence.md`. Overall **NO-GO**.

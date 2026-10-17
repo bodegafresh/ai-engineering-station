@@ -1398,3 +1398,13 @@ git diff --check
 - **Security conclusion:** a committed admission survives revocation by design and **is not** a fencing token. The test deliberately does not claim stale filesystem writer exclusion. Keep ambiguous attempts quarantined and do not reassign automatically. **NO-GO** global.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.13d:** test the actual `WorkspaceDocumentationService` post-admission write window using controlled process barriers; decide on filesystem fencing or a reviewed single-writer deployment contract before certification.
+
+
+## H02-D2C2f.13d — publication rechecks (Fedora validation pending)
+
+- **Baseline:** `main` SHA `048b7cabcd70ba26178c51a4099d8a793f17d8b2` (PR #145 merged).
+- **Production:** after durable admission, revalidate governed authorization before creating output; after FILE_WRITTEN journal and immediately before atomic move, revalidate again; on staging recovery, revalidate before atomic move. Legacy ungoverned behavior remains unchanged.
+- **Evidence:** `docs/governance/H02-D2C2f-13d-publication-recheck-evidence.md`.
+- **Safety boundary:** bounded revocation checks, NOT atomic fencing: revocation may commit after the last check and before the filesystem move. Existing admitted attempts retain historical admission. Recovery with revocation now fails closed before staging materialization. No automatic retries of ambiguous model calls. **NO-GO** globally.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentation*' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.13e:** deterministic real CDI post-admission revocation and staging recovery negative tests; evaluate OS-level single-writer exclusion or enforceable fencing for atomicity at publication boundary.
