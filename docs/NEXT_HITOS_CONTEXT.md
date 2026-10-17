@@ -1361,3 +1361,12 @@ git diff --check
 - **Limits:** source tamper only (not journal/artifact tamper), revocation before model invocation only, no new fencing guarantee, no power-loss certification. **NO-GO** overall.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusRevocationTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12z:** journal/artifact tamper and cross-JVM fencing review, recovery runbook, formal assurance GO/NO-GO decision with explicit residual risks.
+
+## H02-D2C2f.12z — replay integrity negatives (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `f4238a9db5394cad10f5c514f67d2bac1038547a` (PR #141 merged).
+- **Implementation:** extend real CDI positive/replay test with post-publication file tamper and durable journal SHA tamper; each must reject replay without new model HTTP; restore evidence after each case. No production changes.
+- **Evidence:** `docs/governance/H02-D2C2f-12z-integrity-evidence.md` and assurance matrix.
+- **Limitations:** does not cover coordinated evidence replacement, malicious DB writer, full cross-JVM fencing, power loss or cross-store atomicity. **NO-GO** for H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusPositiveTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.13a:** adversarial cross-process fencing and coordinated evidence tamper threat model, production runbook, ADR and bounded certification verdict.

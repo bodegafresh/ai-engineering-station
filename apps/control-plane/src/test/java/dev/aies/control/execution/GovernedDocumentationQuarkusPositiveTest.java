@@ -169,5 +169,47 @@ class GovernedDocumentationQuarkusPositiveTest {
         try (var policies = new GovernedToolResourcePolicyStore(Fixture.journal.resolve("governed-tool-policies.sqlite"))) {
             assertTrue(policies.publicationAdmitted(Fixture.WF, Fixture.TASK, Fixture.token));
         }
+        // The successful publication is already committed: replay must reject altered evidence.
+        Path published = Fixture.root.resolve(first.getString("documentPath"));
+        byte[] original = Files.readAllBytes(published);
+        try {
+            Files.writeString(published, "# attacker-replaced-document\n");
+            assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> bus.<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
+                    Fixture.request(), new DeliveryOptions().setSendTimeout(5000))
+                    .toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS));
+            assertEquals(1, Fixture.HTTP_CALLS.get(), "Tampered replay must not call model");
+        } finally {
+            Files.write(published, original);
+        }
+        // Journal-only digest corruption must also fail closed. Restore fixture after assertion.
+        Path db = Fixture.journal.resolve("execution-handoff.sqlite");
+        String originalDigest = first.getString("documentSha256");
+        try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + db)) {
+            try (var update = connection.prepareStatement(
+                "UPDATE execution_attempt_effects SET document_sha256=? WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+                update.setString(1, "0".repeat(64));
+                update.setString(2, Fixture.WF);
+                update.setString(3, Fixture.TASK);
+                update.setString(4, Fixture.token);
+                assertEquals(1, update.executeUpdate());
+            }
+            try {
+                assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> bus.<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
+                        Fixture.request(), new DeliveryOptions().setSendTimeout(5000))
+                        .toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS));
+                assertEquals(1, Fixture.HTTP_CALLS.get(), "Journal tamper must not call model");
+            } finally {
+                try (var restore = connection.prepareStatement(
+                    "UPDATE execution_attempt_effects SET document_sha256=? WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+                    restore.setString(1, originalDigest);
+                    restore.setString(2, Fixture.WF);
+                    restore.setString(3, Fixture.TASK);
+                    restore.setString(4, Fixture.token);
+                    assertEquals(1, restore.executeUpdate());
+                }
+            }
+        }
     }
 }
