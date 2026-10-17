@@ -1324,3 +1324,13 @@ git diff --check
 - **Limitations:** gate release does not guarantee simultaneous file operations; losing contender may fail. No deterministic COMMIT fault injection, negative CDI matrix or power-loss certification. **NO-GO** for H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12v:** diagnose any race failures, add production coordination/fencing if required, deterministic SQLite COMMIT fault injection, negative CDI and update assurance/ADR before closure review.
+
+
+## H02-D2C2f.12v — SQLite admission pre-COMMIT failure and lost-ack reconciliation (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `2457c327490e2803489646e653741b6197eb3436`, PR #137 merged (12u).
+- **Implementation:** new `GovernedPublicationTransactionFaultTest`: SQLite trigger injects an ABORT after admission ALLOW audit but before INSERT/COMMIT, verifying full rollback and clean retry after trigger removal; simulated lost acknowledgment after successful COMMIT requires durable read and rejects blind duplicate admission.
+- **Evidence:** `docs/governance/H02-D2C2f-12v-sqlite-fault-evidence.md`. No production source or feature flag changes.
+- **Limitations:** no exception injected **inside** JDBC COMMIT, no crash/fsync or power-loss guarantee, no negative CDI matrix or production fencing changes. **NO-GO** for H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationTransactionFaultTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12w:** negative CDI integration matrix, fault injection at actual COMMIT boundary, assess writer fencing, update assurance matrix and ADR; decide readiness for final governance closure.
