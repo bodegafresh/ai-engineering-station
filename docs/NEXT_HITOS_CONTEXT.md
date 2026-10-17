@@ -1439,3 +1439,13 @@ git diff --check
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationGateProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Global:** **NO-GO** pending full two-JVM revocation-versus-document-move and interrupted staging recovery assertions against durable policy/journal/artifact stores. Do not claim end-to-end fencing from gate-only tests.
 - **Next:** implement end-to-end cross-process governed publisher/operator harness and durable-effect verification as a single acceptance increment, then make an explicit GO/NO-GO decision; do not add more authorization checkpoints.
+
+
+## H02-D2C2f.16 — real cross-JVM revocation integration (Fedora validation pending)
+
+- **Baseline:** `main` `b75567150278df4b29264187db9b3ee7063be54b` (H02-D2C2f.15 merged).
+- **Test:** `GovernedRevocationCrossJvmTest` holds the actual production publication gate in a separate JVM and invokes the actual SQLite-backed operator revocation in the test JVM. Asserts no early acknowledgement, active policy while held, and durable REVOKED after release.
+- **Limit:** process timing is bounded but revocation-at-lock barrier is not instrumented. No full documentation publication, `.staging` crash recovery, or exactly-once model guarantee proven here.
+- **Evidence:** `docs/governance/H02-D2C2f-16-revocation-process-evidence.md`.
+- **Validation pending:** focal test and `./gradlew clean test` on Fedora. **Global NO-GO.**
+- **Next:** deterministic full governed CDI publication/revocation and crash recovery, without proliferating isolated recheck milestones; close only on verified acceptance evidence.
