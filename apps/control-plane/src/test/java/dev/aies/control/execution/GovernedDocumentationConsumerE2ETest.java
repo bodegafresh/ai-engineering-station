@@ -139,6 +139,52 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** Concurrent deliveries for the same durable attempt cannot both invoke Ollama. */
+    @Test void concurrentDeliveriesReserveOnlyOneModelInvocation() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+            var start = new java.util.concurrent.CountDownLatch(1);
+            try {
+                java.util.concurrent.Callable<Boolean> operation = () -> {
+                    start.await();
+                    try {
+                        service.generate(request(f));
+                        return true;
+                    } catch (Exception ex) {
+                        return false;
+                    }
+                };
+                var first = pool.submit(operation);
+                var second = pool.submit(operation);
+                start.countDown();
+                boolean a = first.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                boolean b = second.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                assertTrue(a || b, "At least one delivery must complete");
+                assertEquals(1, calls.get(), "Durable reservation prevents duplicate HTTP effects");
+                assertTrue(Files.isDirectory(root.resolve(".aies/generated-docs")));
+            } finally {
+                pool.shutdownNow();
+                assertTrue(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    /** SQLite availability is part of authorization: a missing policy must not become a grant. */
+    @Test void missingPolicyDatabaseFailsClosedWithoutModelInvocation() throws Exception {
+        Fixture f = fixture();
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            assertThrows(Exception.class, () -> service.generate(request(f)));
+            assertEquals(0, calls.get());
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")));
+        }
+    }
+
     private WorkspaceDocumentationService service(Fixture f, int port) throws Exception {
         var executor = new OllamaSpecialistExecutor(HttpClient.newHttpClient(), mapper,
             "http://127.0.0.1:" + port, "qwen3:4b", 5);
