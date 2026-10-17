@@ -1058,3 +1058,12 @@ git diff --check
 - **Pruebas:** test del contrato de grants y snapshots; se requiere validar en Fedora la suite completa y probar manualmente con token válido e inválido, intento inexistente y revocación.
 - **Limitaciones:** este slice **NO** implementa todavía la vinculación inmutable de revisión al handoff, auditoría durable de cada decisión, autenticación diferenciada por roles, tests E2E reales, ni certificación multi-JVM. `WorkspaceOperatorAuthorizer` reutiliza el token configurado para workspace changes. No habilitar producción hasta cerrar estas brechas.
 - **Siguiente slice H02-D2C2f.6:** persistir revisión de política en handoff, añadir auditoría estructurada y pruebas de revocación multi-proceso/E2E; después H02-D2C3.
+
+## H02-D2C2f.6 — Vinculación durable de revisión al intento (slice 1)
+
+- **Baseline:** `main` tras H02-D2C2f.5. Migración SQLite aditiva: `execution_governed_attempts.policy_revision` nullable para preservar filas antiguas; filas sin revisión vinculada fallan cerradas al ejecutar herramientas.
+- **Aprobación:** el endpoint de operador aprueba una política inmutable y vincula su revisión al intento vigente. Un fallo entre ambas escrituras (dos archivos SQLite distintos) deja una política persistida pero **no ejecutable**; un replay idéntico puede completar el vínculo. No se declara atomicidad distribuida.
+- **Consumidores:** `GovernedToolResourcePolicyStore.requireAuthorized` verifica ahora revisión persistida en `ExecutionHandoffStore` además de lease, identidad, expiración, revocación y grants exactos. La ruta legacy no cambia.
+- **Concurrencia:** el vínculo usa actualización condicional `WHERE policy_revision IS NULL`; revisiones diferentes no sustituyen el valor ya fijado. Falta certificación multi-JVM y auditoría durable de cada decisión.
+- **Pruebas:** añadir pruebas unitarias de migración, replay, mismatch y revocación en el siguiente slice; ejecutar suite Gradle completa antes de fusionar. No habilitar gobernanza en producción.
+- **Siguiente slice H02-D2C2f.7:** journal durable de decisiones y revocaciones, integración de auditoría en ambos consumidores, HTTP/E2E real y multi-proceso; después H02-D2C3 observabilidad/shadow/rollback.

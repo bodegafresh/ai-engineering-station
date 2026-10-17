@@ -112,7 +112,7 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
             !attempt.specialistId().equals(request.specialistId()) ||
             !attempt.version().equals(request.specialistVersion()))
             throw new SecurityException("Attempt identity mismatch");
-        handoff.requireGovernedAttempt(attempt);
+        handoff.requireGovernedPolicyRevision(attempt, revision);
         var decision = evaluate(request, revision, Instant.now());
         if (!decision.allowed()) throw new SecurityException("Tool authorization denied: " + decision.denial());
     }
