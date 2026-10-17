@@ -349,6 +349,41 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** A failed durable ALLOW after HTTP must not publish or automatically retry an ambiguous invocation. */
+    @Test void postHttpAuditFailureDeniesPublicationAndPreservesAmbiguousReservation() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        Path policyFile = root.resolve("journal/governed-tool-policies.sqlite");
+        // ALLOW #1 = read-source; #2 = invoke-model; #3 = post-HTTP reauthorization.
+        // Fail only the third authorization, after the external effect has occurred.
+        try (var db = java.sql.DriverManager.getConnection("jdbc:sqlite:" + policyFile);
+             var statement = db.createStatement()) {
+            statement.execute("CREATE TRIGGER fail_third_allow BEFORE INSERT ON governed_policy_audit " +
+                "WHEN NEW.decision='ALLOW' AND " +
+                "(SELECT COUNT(*) FROM governed_policy_audit WHERE decision='ALLOW') >= 2 " +
+                "BEGIN SELECT RAISE(ABORT, 'injected post-HTTP audit failure'); END");
+        }
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            var service = service(f, mock.port());
+            assertThrows(java.sql.SQLException.class, () -> service.generate(request(f)));
+            assertEquals(1, calls.get(), "HTTP already occurred before the injected audit failure");
+            assertFalse(Files.exists(root.resolve(".aies/generated-docs")),
+                "Failed post-HTTP audit must not publish a document");
+            try (var handoff = new ExecutionHandoffStore(root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+                assertTrue(handoff.modelInvocationReserved(WF, TASK, f.token()));
+                assertEquals("AMBIGUOUS_INVOCATION", handoff.invocationRecoveryStatus(WF, TASK, f.token()));
+            }
+            try (var db = java.sql.DriverManager.getConnection("jdbc:sqlite:" + policyFile);
+                 var statement = db.createStatement()) {
+                statement.execute("DROP TRIGGER fail_third_allow");
+            }
+            assertThrows(IllegalStateException.class, () -> service.generate(request(f)),
+                "Clearing the fault must not replay a reserved HTTP invocation");
+            assertEquals(1, calls.get());
+        }
+    }
+
     /** Production Event Bus component configured explicitly for an isolated Vert.x instance. */
     private final class DocumentationBusHarness implements AutoCloseable {
         private final io.vertx.core.Vertx vertx = io.vertx.core.Vertx.vertx();
