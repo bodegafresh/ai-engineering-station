@@ -37,3 +37,9 @@ Record main SHA, JDK/Gradle versions, exact test commands, XML reports, GitHub C
 
 - Real COMMIT followed by injected SQLException; durable read confirms one admission and one ALLOW audit, duplicate denied.
 - No inside-COMMIT failure, power-loss durability, complete CDI negatives or fencing proof. **NO-GO** overall.
+
+## H02-D2C2f.12y — isolated negative CDI revocation and source tamper (Fedora validation pending)
+
+- `GovernedDocumentationQuarkusRevocationTest`: independent Quarkus profile/SQLite fixture, tampered source then restored original, durable policy revocation, no HTTP calls and no publication admission.
+- Covers **source** tampering and pre-invocation revocation only. Does not prove journal/artifact tamper rejection, revocation after publication admission, global fencing, or power-loss durability.
+- Overall H02-D2C2f remains **NO-GO**.
