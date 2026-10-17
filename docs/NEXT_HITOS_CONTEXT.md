@@ -1113,3 +1113,14 @@ git diff --check
 - No se modifican contratos de producción. Se verifica persistencia mediante reapertura de conexiones y journal de revocación.
 - **Limitaciones:** todavía no hay certificación multi-JVM ni kill -9, migración histórica ni integración E2E de consumidores. El test usa HTTP real contra Quarkus embebido, no despliegue externo. No declarar finalizada H02-D2C2f ni habilitar gobernanza en producción.
 - **Próximo H02-D2C2f.12:** multiproceso JVM, interrupción abrupta, migraciones y consumidores; después H02-D2C3.
+
+
+## H02-D2C2f.12 — Certificación multiproceso JVM (slice 1, pendiente de validación Fedora)
+
+- Baseline: `main` posterior a H02-D2C2f.11, SHA `0bd1ff2feee85bff09ffbe15c40da1b582a104ba`.
+- Pruebas nuevas: `GovernedPolicyMultiJvmIntegrationTest` ejecuta dos JVM independientes con `ProcessBuilder` y classpath real de Gradle; la coordinación de inicio utiliza archivos barrera temporales y límites de tiempo explícitos.
+- Garantías bajo prueba: dos aprobaciones contradictorias sobre la misma política SQLite solo admiten un ganador; autorización ALLOW en JVM separada, revocación desde otra JVM y DENY persistente en una tercera, con journal durable.
+- Sin cambios en rutas SQLite del operador, flags de producción, permisos, modelo de política o código de aprobación.
+- **Límites:** este slice no prueba aún `kill -9`, migraciones históricas, ni E2E completo de consumidores; no se declara cerrado H02-D2C2f ni se habilita gobernanza en producción. SQLite WAL multiproceso presupone filesystem local compatible, no NFS.
+- **Validación obligatoria:** test focalizado multiproceso con `--rerun-tasks`, suite completa `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. Si aparecen errores de locking o driver, preservar XML y corregir la causa, no añadir reintentos arbitrarios.
+- **Siguiente slice H02-D2C2f.12b:** crash real `kill -9` entre aprobación y binding, migración histórica verificable y límites E2E de consumidores; después H02-D2C3 observabilidad/shadow/rollback.
