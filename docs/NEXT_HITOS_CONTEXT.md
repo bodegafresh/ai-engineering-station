@@ -1352,3 +1352,12 @@ git diff --check
 - **Limits:** no inside-COMMIT fault, power-loss or cross-store atomicity proof; negative CDI revocation/tamper and fencing remain incomplete. **NO-GO** overall.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationCommitBoundaryTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12y:** CDI revocation/tamper with isolated fixtures, fencing decision, runbook and evidence-based GO/NO-GO.
+
+## H02-D2C2f.12y — isolated CDI tamper/revocation gate (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `7fe8968c0aecd0d4e8c8371a22947d42c48614fc` (PR #140 merged).
+- **Implementation:** independent Quarkus test profile cloned from established positive fixture; source tamper must fail before HTTP, then original restored and policy revoked durably; CDI request must fail with zero HTTP and zero publication admission.
+- **Evidence:** `docs/governance/H02-D2C2f-12y-cdi-evidence.md` and assurance matrix. No production code change.
+- **Limits:** source tamper only (not journal/artifact tamper), revocation before model invocation only, no new fencing guarantee, no power-loss certification. **NO-GO** overall.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusRevocationTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12z:** journal/artifact tamper and cross-JVM fencing review, recovery runbook, formal assurance GO/NO-GO decision with explicit residual risks.
