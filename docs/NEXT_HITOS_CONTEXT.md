@@ -1067,3 +1067,13 @@ git diff --check
 - **Concurrencia:** el vínculo usa actualización condicional `WHERE policy_revision IS NULL`; revisiones diferentes no sustituyen el valor ya fijado. Falta certificación multi-JVM y auditoría durable de cada decisión.
 - **Pruebas:** añadir pruebas unitarias de migración, replay, mismatch y revocación en el siguiente slice; ejecutar suite Gradle completa antes de fusionar. No habilitar gobernanza en producción.
 - **Siguiente slice H02-D2C2f.7:** journal durable de decisiones y revocaciones, integración de auditoría en ambos consumidores, HTTP/E2E real y multi-proceso; después H02-D2C3 observabilidad/shadow/rollback.
+
+## H02-D2C2f.7 — Journal durable de políticas (slice 1)
+
+- **Baseline:** `main` tras H02-D2C2f.6. Migración aditiva en `governed-tool-policies.sqlite`: tabla `governed_policy_audit` e índice por intento.
+- **Eventos:** `APPROVE`, `REVOKE`, `EVALUATE` con revisión, identidad de intento, herramienta/acción/recurso, decisión y razón; no se guardan tokens ni prompts.
+- **Atomicidad local:** aprobación y revocación se auditan dentro de la misma transacción SQLite. `evaluate` persiste su decisión antes de devolverla; si falla la escritura, no se devuelve ALLOW. Las operaciones externas no son transaccionales.
+- **Consultas:** API interna `auditTrail` ordenada por `event_id`. No se expone endpoint público para evitar fugas de información.
+- **Pruebas:** `GovernedPolicyAuditJournalTest` verifica persistencia tras reinicio, replay, ALLOW, DENY, revisión incorrecta, revocación y ausencia de política.
+- **Limitaciones:** la verificación de identidad/lease y el enlace de revisión ocurren en otro store y todavía no se auditan como eventos DENY; no se certifica la revocación durante una llamada externa iniciada. Pendiente integración E2E HTTP y pruebas multi-JVM. No habilitar governed en producción.
+- **Siguiente slice H02-D2C2f.8:** auditar todas las denegaciones pre-evaluación, pruebas HTTP de credenciales y permisos, migración/replay multi-proceso y certificación E2E. Después H02-D2C3.

@@ -34,6 +34,14 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                 "expires_at TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0 CHECK(revoked IN (0,1))," +
                 "created_at TEXT NOT NULL, revoked_at TEXT," +
                 "PRIMARY KEY(workflow_id,task_id,attempt_id))");
+            s.execute("CREATE TABLE IF NOT EXISTS governed_policy_audit (" +
+                "event_id INTEGER PRIMARY KEY AUTOINCREMENT, occurred_at TEXT NOT NULL," +
+                "event_type TEXT NOT NULL, workflow_id TEXT NOT NULL, task_id TEXT NOT NULL," +
+                "attempt_id TEXT NOT NULL, policy_revision INTEGER," +
+                "tool TEXT, action TEXT, resource TEXT, decision TEXT NOT NULL," +
+                "reason TEXT NOT NULL)");
+            s.execute("CREATE INDEX IF NOT EXISTS governed_policy_audit_attempt_idx " +
+                "ON governed_policy_audit(workflow_id,task_id,attempt_id,event_id)");
             s.execute("CREATE TABLE IF NOT EXISTS governed_tool_policy_grants (" +
                 "workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, attempt_id TEXT NOT NULL," +
                 "tool TEXT NOT NULL, action TEXT NOT NULL, resource TEXT NOT NULL," +
@@ -53,6 +61,8 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
             var previous = read(snapshot.workflowId(), snapshot.taskId(), snapshot.attemptId());
             if (previous != null) {
                 if (!previous.equals(snapshot)) throw new SecurityException("Policy mutation or revoked replay");
+                audit("APPROVE",snapshot.workflowId(),snapshot.taskId(),snapshot.attemptId(),
+                    snapshot.policyRevision(),null,null,null,"REPLAY","IDENTICAL");
                 commit();
                 return;
             }
@@ -71,6 +81,8 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                 }
                 p.executeBatch();
             }
+            audit("APPROVE",snapshot.workflowId(),snapshot.taskId(),snapshot.attemptId(),
+                snapshot.policyRevision(),null,null,null,"APPROVED","OPERATOR");
             commit();
         } catch (Exception e) { rollback(e); throw e; }
     }
@@ -85,6 +97,8 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                 p.setString(3,taskId); p.setString(4,attemptId);
                 if (p.executeUpdate() != 1) throw new SecurityException("Unknown policy");
             }
+            audit("REVOKE",workflowId,taskId,attemptId,null,null,null,null,
+                "REVOKED","OPERATOR");
             commit();
         } catch (Exception e) { rollback(e); throw e; }
     }
@@ -95,9 +109,14 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
         Objects.requireNonNull(request);
         Objects.requireNonNull(now);
         var snapshot = read(request.workflowId(), request.taskId(), request.attemptId());
-        if (snapshot == null) return new GovernedToolResourcePolicy.Decision(false,
-            GovernedToolResourcePolicy.Denial.NOT_GRANTED);
-        return GovernedToolResourcePolicy.evaluate(request, snapshot, expectedRevision, now);
+        var decision = snapshot == null
+            ? new GovernedToolResourcePolicy.Decision(false,GovernedToolResourcePolicy.Denial.NOT_GRANTED)
+            : GovernedToolResourcePolicy.evaluate(request, snapshot, expectedRevision, now);
+        // A durable decision record must exist before returning ALLOW to the caller.
+        audit("EVALUATE",request.workflowId(),request.taskId(),request.attemptId(),
+            expectedRevision,request.tool(),request.action(),request.resource(),
+            decision.allowed() ? "ALLOW" : "DENY",decision.denial().name());
+        return decision;
     }
 
     /** Optional durable lease/identity barrier for governed execution consumers. */
@@ -154,6 +173,37 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
             }
         }
     }
+
+    /** Append-only audit. Failure to persist an ALLOW throws, never grants access. */
+    private void audit(String type,String wf,String task,String attempt,Long revision,
+                       String tool,String action,String resource,String decision,String reason)
+            throws SQLException {
+        try (var p=db.prepareStatement("INSERT INTO governed_policy_audit(" +
+                "occurred_at,event_type,workflow_id,task_id,attempt_id,policy_revision," +
+                "tool,action,resource,decision,reason) VALUES(?,?,?,?,?,?,?,?,?,?,?)")) {
+            p.setString(1,Instant.now().toString()); p.setString(2,type);
+            p.setString(3,wf); p.setString(4,task); p.setString(5,attempt);
+            if(revision==null) p.setNull(6,java.sql.Types.BIGINT); else p.setLong(6,revision);
+            p.setString(7,tool); p.setString(8,action); p.setString(9,resource);
+            p.setString(10,decision); p.setString(11,reason);
+            p.executeUpdate();
+        }
+    }
+
+    /** Query ordered audit records without exposing credentials or model content. */
+    public synchronized List<AuditEntry> auditTrail(String wf,String task,String attempt) throws SQLException {
+        List<AuditEntry> events=new ArrayList<>();
+        try(var p=db.prepareStatement("SELECT event_id,event_type,policy_revision,decision,reason " +
+                "FROM governed_policy_audit WHERE workflow_id=? AND task_id=? AND attempt_id=? ORDER BY event_id")) {
+            p.setString(1,wf);p.setString(2,task);p.setString(3,attempt);
+            try(var rs=p.executeQuery()) {
+                while(rs.next()) events.add(new AuditEntry(rs.getLong(1),rs.getString(2),
+                    rs.getObject(3)==null?null:rs.getLong(3),rs.getString(4),rs.getString(5)));
+            }
+        }
+        return List.copyOf(events);
+    }
+    public record AuditEntry(long eventId,String type,Long revision,String decision,String reason) {}
 
     private void begin() throws SQLException {
         try (var s=db.createStatement()) { s.execute("BEGIN IMMEDIATE"); }
