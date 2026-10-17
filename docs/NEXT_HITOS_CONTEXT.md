@@ -1244,3 +1244,12 @@ git diff --check
 - **Explicit limitations:** deterministic exception + fresh Java service is **not** an OS process crash, power loss, fsync certification or SQLite COMMIT crash. Positive governed CDI `@QuarkusTest` remains pending. No cross-store exactly-once guarantee; no default feature flag changes. H02-D2C2f remains open.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`; inspect reports before PR.
 - **Next H02-D2C2f.12n:** isolated positive governed CDI/Quarkus E2E, subprocess kill/restart and durable fault matrix; review final closure criteria before H02-D2C3 observability/shadow/rollback.
+
+## H02-D2C2f.12n — Positive governed Quarkus/CDI Event Bus (bounded slice; Fedora validation pending)
+
+- **Baseline:** `main` SHA `8975ed236cb5bdb4a4099886c3ea04906ea440a2`, merge PR #129 (12m).
+- **Scope:** positive `@QuarkusTest` with production CDI-managed `WorkspaceDocumentationEventBus`, governed selection enabled only in isolated test profile, actual activated specialist registry, SQLite lease/grants/admission and loopback HTTP mock. Checks successful documentation, durable admission, idempotent replay and exactly one observed HTTP call for this fixture.
+- **Isolation:** unique temporary workspace and databases; no Ollama dependency; no production flags or code changes. A bounded test profile deliberately starts the local HTTP server before Quarkus boots.
+- **Limitations:** test profile and in-process HTTP mock do not establish OS-process kill/restart, SQLite power-loss safety, or distributed exactly-once semantics. CDI positive test is not a substitute for negative authorization tests. H02-D2C2f remains open pending Fedora verification and independent-process restart certification.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusPositiveTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. Inspect JUnit reports before PR.
+- **Next H02-D2C2f.12o:** separate-JVM restart harness and durable fault matrix, review revocation/publication ordering and final governance guarantees before H02-D2C3 observability/shadow/rollback.
