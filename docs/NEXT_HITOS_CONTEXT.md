@@ -1086,3 +1086,12 @@ git diff --check
 - Pruebas `GovernedPolicyEarlyDenialAuditTest`: falta de política, identidad incorrecta, intento sin revisión vinculada, persistencia del registro.
 - **Alcance limitado:** las excepciones SQL/IO durante el handoff no se clasifican como denegaciones de seguridad; siguen abortando la ejecución. No hay certificación HTTP ni multi-JVM ni E2E en este slice. No activar en producción.
 - Próximo slice H02-D2C2f.9: pruebas HTTP del operador, recuperación, migración, concurrencia y E2E real. Luego H02-D2C3.
+
+## H02-D2C2f.9 — Certificación HTTP negativa y concurrencia SQLite (slice 1)
+
+- Baseline: `main` tras H02-D2C2f.8.
+- Tests Quarkus HTTP reales: `GovernedPolicyOperatorHttpDisabledTest` verifica feature flag cerrado por defecto para aprobación y revocación. `GovernedPolicyOperatorHttpEnabledTest` verifica rechazo de credenciales ausentes o erróneas y solicitudes inválidas con credencial válida.
+- Test de concurrencia `GovernedPolicyConcurrentStoreTest`: dos conexiones SQLite intentan aprobar revisiones contradictorias; solamente una puede persistir y queda un evento `APPROVED`.
+- No se modifican los contratos de producción. Los tests HTTP del perfil habilitado no aprueban políticas válidas ni crean leases; las respuestas 409 son esperadas.
+- **Limitaciones:** falta E2E HTTP positivo con intento/lease reales, certificación multi-JVM, migraciones/replay y escenarios de crash entre aprobación y vinculación. No se declara finalizada H02-D2C2f.9 ni se recomienda habilitar governed en producción.
+- **Próximo incremento H02-D2C2f.10:** E2E positivo, recuperación de fallos, multiproceso y cierre de certificación. Después H02-D2C3.
