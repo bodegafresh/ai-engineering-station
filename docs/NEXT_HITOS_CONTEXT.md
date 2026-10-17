@@ -1199,3 +1199,13 @@ git diff --check
 - **Validación Fedora:** prueba focalizada `BUILD SUCCESSFUL` (12 s); suite completa `BUILD SUCCESSFUL` (32 s).
 - **Límite residual:** esta comprobación no elimina completamente la carrera entre la última autorización y la publicación material. El cierre de esa ventana requiere coordinación transaccional o un mecanismo de fencing adecuado. Tampoco certifica el arranque completo Quarkus/CDI.
 - **Próximo incremento H02-D2C2f.12i:** integración Quarkus/CDI, pruebas de recuperación tras reinicio, fallos transaccionales y diseño de fencing para publicación.
+
+## H02-D2C2f.12i — Quarkus/CDI real: registro de consumidor y límites de confianza (slice 1; validación Fedora pendiente)
+
+- **Baseline:** `main` SHA `94fbc7d914b07bb0ac56d53cfd9e087f1ac420f0`, posterior al PR #124 (12h).
+- **Alcance:** nuevo `WorkspaceDocumentationQuarkusLifecycleTest` con `@QuarkusTest` y `QuarkusTestProfile`. Arranca el control-plane con CDI real, habilita exclusivamente el consumidor de documentación en el perfil de prueba y mantiene gobernanza deshabilitada. Verifica la inyección del bean, la entrega por Event Bus real y el rechazo de solicitudes inválidas con `ReplyFailure.RECIPIENT_FAILURE`/422, diferenciando ese rechazo de `NO_HANDLERS`.
+- **Límite de confianza:** campos de identidad gobernada enviados cuando la gobernanza está deshabilitada se rechazan en el consumidor real; nunca se consideran concesiones. No se invoca HTTP externo ni se prepara un intento de ejecución en estos escenarios negativos.
+- **Cambios:** solo pruebas y este documento. Sin cambios de producción, defaults, esquema SQLite, HTTP ni contratos de autorización.
+- **Validación requerida:** `./gradlew :apps:control-plane:test --tests '*WorkspaceDocumentationQuarkusLifecycleTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`. No se afirma certificación hasta obtener resultados Fedora y revisar JUnit XML.
+- **Límites pendientes:** no hay prueba positiva de documentación gobernada bajo CDI, aislamiento multi-perfil, fallos durante COMMIT SQLite, reinicio de proceso ni fencing transaccional entre autorización y publicación. La autorización post-HTTP de 12h reduce la ventana de revocación, pero no la elimina. H02-D2C2f continúa abierto; gobernanza permanece deshabilitada por defecto.
+- **Siguiente H02-D2C2f.12j:** E2E positivo CDI con workspace/SQLite/HTTP aislados, protocolo de publicación con fencing y ADR sobre atomicidad SQLite/sistema de archivos; posteriormente inyección de fallos, recuperación y matriz formal de cierre antes de H02-D2C3 observabilidad/shadow/rollback.
