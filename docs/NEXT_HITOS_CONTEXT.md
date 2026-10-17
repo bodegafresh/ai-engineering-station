@@ -1294,3 +1294,13 @@ git diff --check
 - **Limitations:** no independent-JVM concurrent recovery, negative CDI matrix, SQLite COMMIT fault injection or power-loss/fsync guarantee. H02-D2C2f remains **NO-GO** for final closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12s:** independent-JVM concurrent recovery coordination and deterministic SQLite transaction/COMMIT fault injection, then update certification evidence and review GO/NO-GO.
+
+
+## H02-D2C2f.12s — Cross-JVM publication admission/revocation ordering (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `409cfdc5c6216af43f1f28c9ecb0082c2633c15c`, PR #134 merged (12r).
+- **Implementation:** `GovernedPublicationProcessChild` and `GovernedPublicationProcessTest` exercise real independent JVM processes against one SQLite policy DB: revoke-first, admit-first, and simultaneous starts; assert persisted admission matches observed decision and later revocation does not erase prior admission.
+- **Evidence:** `docs/governance/H02-D2C2f-12s-process-evidence.md` records scope and unresolved guarantees.
+- **Limits:** This is policy ordering, **not concurrent document recovery**. No SQLite COMMIT fault injection, negative CDI matrix, cross-store atomicity or fsync/power-loss certification. No production changes. **NO-GO** for H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12t:** independent-JVM concurrent document recovery and deterministic SQLite COMMIT failure injection; update certification matrix and decide on production fencing fixes.
