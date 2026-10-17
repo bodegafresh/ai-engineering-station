@@ -1154,3 +1154,12 @@ git diff --check
 - **Límites:** esta prueba invoca directamente el servicio, no el Event Bus Quarkus completo; no simula fallo de escritura/auditoría ni revocación durante HTTP ya iniciado. El conteo HTTP certifica efectos de inferencia, no demuestra que un archivo no haya sido leído en memoria. No se habilita gobernanza en producción.
 - **Validación:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. No declarar PASS hasta ejecutar en Fedora.
 - **Siguiente H02-D2C2f.12e:** Event Bus real, inyección de fallos de journal y SQLite, carreras concurrentes y validación de no-efectos externos; luego H02-D2C3 observabilidad/shadow/rollback.
+
+## H02-D2C2f.12e — Concurrencia documental y denegación por falta de política (slice 1; validación Fedora pendiente)
+
+- **Baseline:** `main` SHA `bc340fb7d1257bb441058355ec458d4870f5cdff`, posterior a H02-D2C2f.12d.
+- **Implementación acotada:** se amplía `GovernedDocumentationConsumerE2ETest` con dos entregas concurrentes sobre el mismo intento gobernado, coordinadas por `CountDownLatch`, y con un caso de SQLite de política ausente. Se reutilizan selector activado, handoff real, política operator-owned, servidor HTTP loopback y contador de invocaciones.
+- **Criterios:** concurrencia no produce más de una invocación HTTP por intento; al menos una entrega completa; base de políticas ausente no concede permisos ni invoca Ollama; no se publica documentación en el caso denegado.
+- **Límites:** la concurrencia se ejerce directamente sobre `WorkspaceDocumentationService`, no mediante `WorkspaceDocumentationEventBus` en Quarkus. La ausencia de SQLite no representa corrupción durante commit ni fallo de auditoría después de autorización. Una invocación HTTP ya iniciada no puede revocarse retroactivamente. Este slice NO certifica el cierre de H02-D2C2f ni habilita gobernanza en producción.
+- **Validación obligatoria:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, `git diff --check`. Revisar reportes JUnit XML y resolver flakiness antes de PR.
+- **Siguiente slice H02-D2C2f.12f:** Event Bus Quarkus real, autorización bajo carreras de revocación y fallo transaccional controlado, con pruebas negativas y auditoría. Después revisión de cierre de H02-D2C2f y H02-D2C3 observabilidad/shadow/rollback.
