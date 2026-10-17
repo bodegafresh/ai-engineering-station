@@ -1428,3 +1428,14 @@ git diff --check
 - **Tests:** `GovernedPublicationGateTest` tests intra-JVM serialization; existing post-admission revocation test remains valid because its checkpoint occurs before gate acquisition. Two-JVM process interruption and operational verification are required before a global GO.
 - **Evidence:** `docs/governance/H02-D2C2f-14-publication-fencing-evidence.md`. **Global NO-GO pending Fedora regression and cross-JVM acceptance evidence.**
 - **Next:** do not add another recheck-only milestone. Run cross-JVM ordering/crash acceptance, decide whether to formally restrict deployment to one host/local filesystem, and close H02-D2C2f only against an explicit acceptance checklist.
+
+
+## H02-D2C2f.15 — two-JVM publication gate acceptance (Fedora validation pending)
+
+- **Baseline:** `main` SHA `8aa3c2d118618b545643e6cea83eba4c9aaab10e` (H02-D2C2f.14 merged).
+- **Tests:** real independent JVMs prove OS lock exclusion and kernel lock release after forced process termination; explicit stdout/stdin barriers, no test-only production hooks.
+- **Scope:** additive tests and evidence only; no production contract changes. Existing governed revocation, journal, replay and in-process tests remain.
+- **Evidence:** `docs/governance/H02-D2C2f-15-cross-jvm-acceptance.md`.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationGateProcessTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Global:** **NO-GO** pending full two-JVM revocation-versus-document-move and interrupted staging recovery assertions against durable policy/journal/artifact stores. Do not claim end-to-end fencing from gate-only tests.
+- **Next:** implement end-to-end cross-process governed publisher/operator harness and durable-effect verification as a single acceptance increment, then make an explicit GO/NO-GO decision; do not add more authorization checkpoints.
