@@ -49,6 +49,11 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                 "reason TEXT NOT NULL)");
             s.execute("CREATE INDEX IF NOT EXISTS governed_policy_audit_attempt_idx " +
                 "ON governed_policy_audit(workflow_id,task_id,attempt_id,event_id)");
+            // 12k: publication admission and revocation share this SQLite writer authority.
+            s.execute("CREATE TABLE IF NOT EXISTS governed_publication_admissions (" +
+                "workflow_id TEXT NOT NULL,task_id TEXT NOT NULL,attempt_id TEXT NOT NULL," +
+                "policy_revision INTEGER NOT NULL,admitted_at TEXT NOT NULL," +
+                "PRIMARY KEY(workflow_id,task_id,attempt_id))");
             s.execute("CREATE TABLE IF NOT EXISTS governed_tool_policy_grants (" +
                 "workflow_id TEXT NOT NULL, task_id TEXT NOT NULL, attempt_id TEXT NOT NULL," +
                 "tool TEXT NOT NULL, action TEXT NOT NULL, resource TEXT NOT NULL," +
@@ -92,6 +97,65 @@ public final class GovernedToolResourcePolicyStore implements AutoCloseable {
                 snapshot.policyRevision(),null,null,null,"APPROVED","OPERATOR");
             commit();
         } catch (Exception e) { rollback(e); throw e; }
+    }
+
+    /**
+     * 12k bounded publication admission. BEGIN IMMEDIATE serializes this decision with
+     * operator revocation in the SAME policy database. Admission is immutable; a
+     * later revocation does not retroactively erase an already admitted attempt.
+     * No filesystem/communication transaction is claimed.
+     */
+    public synchronized void admitPublication(GovernedToolResourcePolicy.Request request) throws Exception {
+        Objects.requireNonNull(request);
+        begin();
+        try {
+            var snapshot = read(request.workflowId(), request.taskId(), request.attemptId());
+            if (snapshot == null) {
+                audit("PUBLICATION_ADMISSION",request.workflowId(),request.taskId(),request.attemptId(),
+                    null,request.tool(),request.action(),request.resource(),"DENY","MISSING_POLICY");
+                commit();
+                throw new SecurityException("Publication policy missing");
+            }
+            var decision = GovernedToolResourcePolicy.evaluate(request,snapshot,
+                snapshot.policyRevision(),Instant.now());
+            if (!decision.allowed()) {
+                audit("PUBLICATION_ADMISSION",request.workflowId(),request.taskId(),request.attemptId(),
+                    snapshot.policyRevision(),request.tool(),request.action(),request.resource(),
+                    "DENY",decision.denial().name());
+                commit();
+                throw new SecurityException("Publication admission denied: " + decision.denial());
+            }
+            try (var existing=db.prepareStatement("SELECT policy_revision FROM governed_publication_admissions " +
+                    "WHERE workflow_id=? AND task_id=? AND attempt_id=?")) {
+                existing.setString(1,request.workflowId());existing.setString(2,request.taskId());
+                existing.setString(3,request.attemptId());
+                try(var rs=existing.executeQuery()) {
+                    if(rs.next()) throw new SecurityException("Publication already admitted");
+                }
+            }
+            audit("PUBLICATION_ADMISSION",request.workflowId(),request.taskId(),request.attemptId(),
+                snapshot.policyRevision(),request.tool(),request.action(),request.resource(),"ALLOW","ADMITTED");
+            try(var insert=db.prepareStatement("INSERT INTO governed_publication_admissions VALUES(?,?,?,?,?)")) {
+                insert.setString(1,request.workflowId());insert.setString(2,request.taskId());
+                insert.setString(3,request.attemptId());insert.setLong(4,snapshot.policyRevision());
+                insert.setString(5,Instant.now().toString());insert.executeUpdate();
+            }
+            commit();
+        } catch (SecurityException denied) {
+            // Denial audit was committed for missing/revoked grants. Duplicate admission
+            // rolls back without changing the immutable prior fence.
+            try (var s=db.createStatement()) { s.execute("ROLLBACK"); }
+            catch(SQLException alreadyCommitted) { /* denial already committed */ }
+            throw denied;
+        } catch(Exception e) { rollback(e); throw e; }
+    }
+
+    public synchronized boolean publicationAdmitted(String wf,String task,String attempt) throws Exception {
+        try(var p=db.prepareStatement("SELECT 1 FROM governed_publication_admissions WHERE " +
+                "workflow_id=? AND task_id=? AND attempt_id=?")) {
+            p.setString(1,wf);p.setString(2,task);p.setString(3,attempt);
+            try(var rs=p.executeQuery()) { return rs.next(); }
+        }
     }
 
     /** Irreversible, idempotent operator revocation. Unknown policies fail closed. */

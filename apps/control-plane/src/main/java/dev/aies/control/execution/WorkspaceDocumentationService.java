@@ -155,6 +155,16 @@ public final class WorkspaceDocumentationService {
         // A revocation while the model was running must deny publication.
         authorizeGovernedTool(workflowId, taskId, attemptId,
             "workspace-documentation", "invoke-model", "ollama:software-engineer");
+        // 12k: admission is ordered with operator revocation in the policy SQLite writer.
+        // This does not make SQLite and filesystem writes a single atomic transaction.
+        if (governedGuard != null) {
+            var publicationRequest = new GovernedToolResourcePolicy.Request(workflowId, taskId, attemptId,
+                governedSnapshot.specialistId(), governedSnapshot.version(),
+                "workspace-documentation", "invoke-model", "ollama:software-engineer");
+            try (var policy = new GovernedToolResourcePolicyStore(dataRoot.resolve("governed-tool-policies.sqlite"))) {
+                policy.admitPublication(publicationRequest);
+            }
+        }
         // Do not allow symlink-based writes in the reserved output tree.
         Path aies = root.resolve(".aies");
         if (Files.exists(aies, LinkOption.NOFOLLOW_LINKS) && (Files.isSymbolicLink(aies) || !Files.isDirectory(aies)))

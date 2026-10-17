@@ -1218,3 +1218,11 @@ git diff --check
 - **Validation:** Fedora must run `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationConsumerE2ETest' --no-daemon --console=plain --rerun-tasks`, `./gradlew clean test --no-daemon --console=plain`, and `git diff --check`; review JUnit failures before PR.
 - **Unresolved:** full positive governed CDI integration, publication fence implementation, SQLite COMMIT/crash injection and multi-process restart recovery. No claim of exactly-once distributed execution or closure of H02-D2C2f.
 - **Next H02-D2C2f.12k:** implement and test a durable publication admission/fence coordinated with revocation, then recover staging/rename/artifact phases under controlled crashes and validate a positive governed CDI path.
+
+## H02-D2C2f.12k — Durable publication admission (bounded first production slice; Fedora validation pending)
+
+- **Baseline:** main `14d51cffdd7b283b7d4768c9632064e8b91f6d3f`, PR #126 merged.
+- **Production:** new `governed_publication_admissions` table in operator policy SQLite; `admitPublication` uses `BEGIN IMMEDIATE`, reads current exact policy and writes admission plus ALLOW audit in the same transaction. Revocation uses the same SQLite writer authority. `WorkspaceDocumentationService` calls admission after HTTP and before staging, only for governed mode. Legacy mode unchanged.
+- **Tests:** new `GovernedPublicationAdmissionTest` covers admission durability across restart, revocation-before-admission denial, revocation-after-admission ordering and missing policy. Run targeted and full Gradle tests on Fedora before PR.
+- **Explicit limitations:** this is NOT a complete publication state machine; `staging`, atomic rename, communication append and execution journal remain outside the policy transaction. Recovery paths are not yet fenced. Existing post-HTTP grant revalidation remains. No exactly-once distributed guarantee, no process crash/COMMIT fault certification, no positive governed CDI E2E. No default feature flag changes.
+- **Next H02-D2C2f.12l:** make recovery paths fence-aware, add durable state transitions and deterministic fault injection; add positive governed Quarkus/CDI test; review linearization and audit-failure handling before closure.
