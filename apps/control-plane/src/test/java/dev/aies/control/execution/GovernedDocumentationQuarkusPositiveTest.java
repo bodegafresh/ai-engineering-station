@@ -129,6 +129,28 @@ class GovernedDocumentationQuarkusPositiveTest {
         @Override public Map<String,String> getConfigOverrides() { return Fixture.initialize(); }
     }
 
+    /** Negative CDI boundary: malformed/forged messages cannot reach model HTTP. */
+    @Test void cdiRejectsForgedOrUnsafeRequestsWithoutModelInvocation() throws Exception {
+        assertNotNull(consumer, "Real Quarkus-managed consumer required");
+        var invalid = List.of(
+            Fixture.request().copy().put("sourcePath", "../outside.java"),
+            Fixture.request().copy().put("sourcePath", "/etc/passwd"),
+            Fixture.request().copy().put("approvedSourceSha256", "0".repeat(64)),
+            Fixture.request().copy().put("attemptId", "forged-attempt"),
+            Fixture.request().copy().put("workflowId", (String) null)
+        );
+        for (JsonObject request : invalid) {
+            int before = Fixture.HTTP_CALLS.get();
+            assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> vertx.eventBus().<JsonObject>request(WorkspaceDocumentationEventBus.GENERATE,
+                    request, new DeliveryOptions().setSendTimeout(5000))
+                    .toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS),
+                "Expected CDI denial for " + request.encode());
+            assertEquals(before, Fixture.HTTP_CALLS.get(),
+                "Rejected CDI message must not invoke the model");
+        }
+    }
+
     @Test void cdiGovernedGenerationAndReplayDoNotDuplicateExternalEffects() throws Exception {
         assertNotNull(consumer, "Quarkus CDI must manage the real consumer");
         var bus = vertx.eventBus();

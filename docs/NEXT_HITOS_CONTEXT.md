@@ -1334,3 +1334,12 @@ git diff --check
 - **Limitations:** no exception injected **inside** JDBC COMMIT, no crash/fsync or power-loss guarantee, no negative CDI matrix or production fencing changes. **NO-GO** for H02-D2C2f closure.
 - **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedPublicationTransactionFaultTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
 - **Next H02-D2C2f.12w:** negative CDI integration matrix, fault injection at actual COMMIT boundary, assess writer fencing, update assurance matrix and ADR; decide readiness for final governance closure.
+
+## H02-D2C2f.12w — Negative Quarkus CDI Event Bus boundary (bounded; Fedora validation pending)
+
+- **Baseline:** `main` SHA `a5383eac13b7c3629447ca8170ab610364e50e1d`, PR #138 merged (12v).
+- **Implementation:** negative real CDI Event Bus matrix added to `GovernedDocumentationQuarkusPositiveTest`: traversal path, absolute path, forged attempt, wrong SHA-256 and missing workflow ID must fail before HTTP. No production or default-flag changes.
+- **Evidence:** `docs/governance/H02-D2C2f-assurance-matrix.md` extended with explicit 12w coverage and remaining gaps.
+- **Limits:** not actual JDBC COMMIT exception injection; revocation/tampering CDI cases remain incomplete; no production fencing or power-loss certification. **NO-GO** for H02-D2C2f closure.
+- **Validation:** `./gradlew :apps:control-plane:test --tests '*GovernedDocumentationQuarkusPositiveTest' --no-daemon --console=plain --rerun-tasks`; `./gradlew clean test --no-daemon --console=plain`; `git diff --check`.
+- **Next H02-D2C2f.12x:** actual COMMIT-boundary fault seam with read-after-unknown reconciliation, CDI revocation and evidence-tamper negatives, explicit production fencing decision, certification matrix/ADR review.
