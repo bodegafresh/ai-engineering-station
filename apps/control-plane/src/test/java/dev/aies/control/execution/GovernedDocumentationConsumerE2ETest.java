@@ -585,6 +585,66 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+    /** H02-D2C2f.18: a different JVM cannot materialize a staged file after durable revocation. */
+    @Test void revokedStagingCannotBeRecoveredByIndependentJvm() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            Process crash = startDocumentationChild(
+                GovernedDocumentationProcessCrashChild.class, f, mock.port(), "AFTER_FILE_JOURNAL");
+            assertEquals(73, awaitDocumentationChild(crash));
+            assertEquals(1, calls.get());
+            Path output = root.resolve(".aies/generated-docs/" + WF + "-" + TASK + "-" + f.token() + ".md");
+            Path staging = output.resolveSibling(output.getFileName() + ".staging");
+            assertTrue(Files.isRegularFile(staging));
+            assertFalse(Files.exists(output));
+            try (var policies = new GovernedToolResourcePolicyStore(root.resolve("journal/governed-tool-policies.sqlite"))) {
+                policies.revoke(WF, TASK, f.token());
+            }
+            Process recovery = startDocumentationChild(GovernedDocumentationRecoveryChild.class, f, mock.port());
+            assertNotEquals(0, awaitDeniedRecoveryChild(recovery), "Revoked staging was recovered");
+            assertFalse(Files.exists(output), "Revoked staging must not be materialized");
+            assertEquals(1, calls.get(), "Recovery cannot reinvoke ambiguous model request");
+            assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(1, calls.get());
+        }
+    }
+
+    /** H02-D2C2f.18: independent recovery rejects bytes that no longer match the durable journal. */
+    @Test void tamperedStagingCannotBeRecoveredByIndependentJvm() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            Process crash = startDocumentationChild(
+                GovernedDocumentationProcessCrashChild.class, f, mock.port(), "AFTER_FILE_JOURNAL");
+            assertEquals(73, awaitDocumentationChild(crash));
+            Path output = root.resolve(".aies/generated-docs/" + WF + "-" + TASK + "-" + f.token() + ".md");
+            Path staging = output.resolveSibling(output.getFileName() + ".staging");
+            assertTrue(Files.isRegularFile(staging));
+            Files.writeString(staging, "tampered after process crash", StandardCharsets.UTF_8);
+            Process recovery = startDocumentationChild(GovernedDocumentationRecoveryChild.class, f, mock.port());
+            assertNotEquals(0, awaitDeniedRecoveryChild(recovery), "Tampered staging was recovered");
+            assertFalse(Files.exists(output));
+            assertEquals(1, calls.get(), "No second model invocation on tampered staging");
+            assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+            assertEquals(1, calls.get());
+        }
+    }
+
+    private static int awaitDeniedRecoveryChild(Process process) throws Exception {
+        try {
+            assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS),
+                "Recovery child timed out");
+            int code = process.exitValue();
+            assertNotEquals(0, code, "Recovery child unexpectedly succeeded");
+            return code;
+        } finally {
+            if (process.isAlive()) process.destroyForcibly().waitFor();
+        }
+    }
+
     private Process startDocumentationChild(Class<?> type, Fixture f, int port, String... extra) throws Exception {
         var command = new java.util.ArrayList<String>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());

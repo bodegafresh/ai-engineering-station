@@ -1459,3 +1459,13 @@ git diff --check
 - **Limits:** no malicious parent-directory replacement protection, no hardlink defense, no distributed fencing, no cross-store transaction or power-loss durability.
 - **Global status:** **NO-GO**. This is a bounded hardening slice, **not** the full end-to-end acceptance originally proposed for .17. See `docs/governance/H02-D2C2f-17-lock-path-hardening.md`.
 - **Next:** actual governed documentation publish/recover/revoke race acceptance across JVMs, with staging tamper/crash and journal/communication/HTTP assertions; decide GO/NO-GO only on recorded evidence.
+
+
+## H02-D2C2f.18 — independent-JVM staging recovery negatives (Fedora validation pending)
+
+- **Baseline:** main `60e1494a695a7bc6376f494d066a9d137019a9ff` (.17 merged).
+- **Tests:** abrupt publisher JVM termination at `AFTER_FILE_JOURNAL`; separate recovery JVM must fail closed for (a) durably revoked policy and (b) tampered staged bytes, with no final document and no second HTTP invocation. Reuses existing real SQLite, activated specialist, filesystem and HTTP fixtures.
+- **Evidence:** `docs/governance/H02-D2C2f-18-cross-jvm-recovery-negatives.md`. No production code change.
+- **Validation:** targeted `GovernedDocumentationConsumerE2ETest`, full `clean test`, `git diff --check` on Fedora. Do not claim results before execution.
+- **Global:** **NO-GO**. These are negative recovery tests, not full publication/revocation race acceptance or power-loss durability.
+- **Next:** implement deterministic real-service cross-JVM publish-first/revoke-first ordering and durable artifact/audit assertions, consolidate evidence into formal bounded GO/NO-GO; avoid further gate-only increments.
