@@ -1449,3 +1449,13 @@ git diff --check
 - **Evidence:** `docs/governance/H02-D2C2f-16-revocation-process-evidence.md`.
 - **Validation pending:** focal test and `./gradlew clean test` on Fedora. **Global NO-GO.**
 - **Next:** deterministic full governed CDI publication/revocation and crash recovery, without proliferating isolated recheck milestones; close only on verified acceptance evidence.
+
+
+## H02-D2C2f.17 — publication lock-path hardening (Fedora validation pending)
+
+- **Baseline:** main `2a938512de4306a338a7997478ea8312addca04f` (H02-D2C2f.16 merged).
+- **Production:** refuse symlink/non-regular publication lock paths, use `NOFOLLOW_LINKS` when opening lock channel, reject symlinked immediate parent; protect cooperative OS-lock coordination against accidental lock-file redirection.
+- **Tests:** `GovernedPublicationGateSafetyTest` for symlink target preservation, directory substitution and recovery after invalid path removal; rerun cross-JVM gate/revocation and full suite.
+- **Limits:** no malicious parent-directory replacement protection, no hardlink defense, no distributed fencing, no cross-store transaction or power-loss durability.
+- **Global status:** **NO-GO**. This is a bounded hardening slice, **not** the full end-to-end acceptance originally proposed for .17. See `docs/governance/H02-D2C2f-17-lock-path-hardening.md`.
+- **Next:** actual governed documentation publish/recover/revoke race acceptance across JVMs, with staging tamper/crash and journal/communication/HTTP assertions; decide GO/NO-GO only on recorded evidence.
