@@ -1479,3 +1479,12 @@ git diff --check
 - **Limits:** bounded contention timing rather than explicit revoker-at-lock barrier; no cross-store atomicity, power-loss durability, distributed fencing, hostile filesystem protection or globally exactly-once HTTP.
 - **Validation:** targeted `GovernedDocumentationConsumerE2ETest`, full `clean test`, `git diff --check`, Fedora test reports and reviewer approval required.
 - **Decision:** **NO-GO pending observed Fedora tests and formal assurance sign-off**. Next: consolidate assurance matrix with explicit scope, runbook and evidence-backed conditional GO/NO-GO. Avoid further isolated gate-only milestones; resume multiagent engineering workflow after governance acceptance.
+
+## H02-D2C2f.20 — assurance consolidation and bounded decision record (Fedora validation pending)
+
+- **Baseline:** `main` `fe215a1f1dc09d4ebddbc3c07cfcdb4f352e8cd9` (.19 merged).
+- **Delivery:** `scripts/governance/assurance_report.py` derives a fail-closed, structured matrix from real Gradle JUnit XML (six categories; missing, skipped, failed, duplicated and malformed evidence rejected); Python self-tests; `docs/governance/H02-D2C2f-20-assurance-matrix.md` and `H02-D2C2f-20-go-no-go.md` with explicit deployment envelope, operator checklist and sign-off record.
+- **No production code change.** The report is evidence indexing, not proof of deployment topology or a release approval. Full Fedora rerun, provenance, filesystem inspection, reviewer and CI evidence remain required.
+- **Decision:** **NO-GO pending observed evidence and independent sign-off**. No claim of SQLite/filesystem atomicity, power-loss durability, hostile filesystem defense, distributed fencing or global exactly-once HTTP.
+- **Validation:** `./gradlew clean test --no-daemon --console=plain --rerun-tasks`; `python3 -m unittest discover -s scripts/governance -p 'test_*.py' -v`; `python3 scripts/governance/assurance_report.py --reports . --output build/assurance/h02-d2c2f20.json`; `git diff --check`.
+- **Next:** after signed bounded governance acceptance, start the real multiagent engineering vertical slice (durable intake/plan, governed specialists, isolated workspace, tests/review, human approval), not another gate-only increment.
