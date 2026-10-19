@@ -1469,3 +1469,13 @@ git diff --check
 - **Validation:** targeted `GovernedDocumentationConsumerE2ETest`, full `clean test`, `git diff --check` on Fedora. Do not claim results before execution.
 - **Global:** **NO-GO**. These are negative recovery tests, not full publication/revocation race acceptance or power-loss durability.
 - **Next:** implement deterministic real-service cross-JVM publish-first/revoke-first ordering and durable artifact/audit assertions, consolidate evidence into formal bounded GO/NO-GO; avoid further gate-only increments.
+
+
+## H02-D2C2f.19 — real-service cross-JVM publication/revocation ordering (Fedora validation pending)
+
+- **Baseline:** `main` `589eedb01cf395da9c704d43691e8fc08606c114` (.18 merged).
+- **Tests:** independent publisher JVM pauses inside the production gate after `FILE_WRITTEN`; operator revocation cannot acknowledge until publisher completes; verify durable `ARTIFACT_RECORDED`, final file digest, one model HTTP invocation, revoked policy, and fail-closed replay. Complementary revoke-first test starts a separate publisher after durable revoke and requires no HTTP, file, or journal effect.
+- **Evidence:** `docs/governance/H02-D2C2f-19-publication-revocation-acceptance.md`. No production changes.
+- **Limits:** bounded contention timing rather than explicit revoker-at-lock barrier; no cross-store atomicity, power-loss durability, distributed fencing, hostile filesystem protection or globally exactly-once HTTP.
+- **Validation:** targeted `GovernedDocumentationConsumerE2ETest`, full `clean test`, `git diff --check`, Fedora test reports and reviewer approval required.
+- **Decision:** **NO-GO pending observed Fedora tests and formal assurance sign-off**. Next: consolidate assurance matrix with explicit scope, runbook and evidence-backed conditional GO/NO-GO. Avoid further isolated gate-only milestones; resume multiagent engineering workflow after governance acceptance.
