@@ -645,6 +645,121 @@ class GovernedDocumentationConsumerE2ETest {
         }
     }
 
+
+    /** Read child protocol markers without treating startup logging as a protocol failure.
+     * The caller bounds blocking reads using Future.get(timeout); EOF is a hard failure.
+     * Unknown non-log protocol markers fail rather than silently advancing the test. */
+    private static String awaitPublisherSignal(java.io.BufferedReader output, String expected)
+            throws java.io.IOException {
+        StringBuilder diagnostics = new StringBuilder();
+        for (int lines = 0; lines < 100; lines++) {
+            String line = output.readLine();
+            if (line == null) throw new java.io.EOFException(
+                "Publisher exited before " + expected + "; output: " + diagnostics);
+            if (expected.equals(line)) return line;
+            if ("PUBLISHER_HOLDS_GATE".equals(line) || "PUBLISHED".equals(line))
+                throw new java.io.IOException("Unexpected publisher protocol marker " + line
+                    + " while waiting for " + expected + "; output: " + diagnostics);
+            if (diagnostics.length() < 8000) diagnostics.append(line).append('\n');
+        }
+        throw new java.io.IOException("Publisher did not emit " + expected
+            + " within 100 output lines; output: " + diagnostics);
+    }
+
+    /** H02-D2C2f.19: a real publisher holds the filesystem gate while a separate
+     * operator thread attempts a durable revocation. The publisher is another JVM. */
+    @Test void crossJvmPublicationCompletesBeforeOperatorRevocationAcknowledgement() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            Process publisher = startDocumentationChild(
+                GovernedDocumentationPublicationBarrierChild.class, f, mock.port());
+            var operator = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                var output = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    publisher.getInputStream(), StandardCharsets.UTF_8));
+                var ready = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try { return awaitPublisherSignal(output, "PUBLISHER_HOLDS_GATE"); }
+                    catch (java.io.IOException failure) { throw new RuntimeException(failure); }
+                });
+                assertEquals("PUBLISHER_HOLDS_GATE", ready.get(20, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals(1, calls.get(), "Model must already have been invoked once");
+                var revoke = operator.submit(() -> {
+                    try (var policies = new GovernedToolResourcePolicyStore(
+                            root.resolve("journal/governed-tool-policies.sqlite"))) {
+                        policies.revoke(WF, TASK, f.token());
+                    }
+                    return true;
+                });
+                assertThrows(java.util.concurrent.TimeoutException.class,
+                    () -> revoke.get(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    "Revocation must not acknowledge while publisher owns the gate");
+                publisher.getOutputStream().write('R');
+                publisher.getOutputStream().flush();
+                var completed = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try { return awaitPublisherSignal(output, "PUBLISHED"); }
+                    catch (java.io.IOException failure) { throw new RuntimeException(failure); }
+                });
+                assertEquals("PUBLISHED", completed.get(20, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(publisher.waitFor(20, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals(0, publisher.exitValue());
+                assertTrue(revoke.get(20, java.util.concurrent.TimeUnit.SECONDS));
+                try (var policies = new GovernedToolResourcePolicyStore(
+                        root.resolve("journal/governed-tool-policies.sqlite"))) {
+                    assertFalse(policies.evaluate(new GovernedToolResourcePolicy.Request(
+                        WF, TASK, f.token(), ID, f.snapshot().version(),
+                        "workspace-documentation", "invoke-model", "ollama:software-engineer"),
+                        POLICY_REVISION, Instant.now()).allowed());
+                }
+                try (var handoff = new ExecutionHandoffStore(
+                        root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+                    var effect = handoff.effect(WF, TASK, f.token()).orElseThrow();
+                    assertEquals("ARTIFACT_RECORDED", effect.phase());
+                    assertNotNull(effect.artifactId());
+                    Path material = root.resolve(effect.documentPath());
+                    assertTrue(Files.isRegularFile(material));
+                    assertEquals(effect.documentSha256(), HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(material))));
+                }
+                assertEquals(1, calls.get(), "Revocation must not cause a second model invocation");
+                assertThrows(SecurityException.class, () -> service(f, mock.port()).generate(request(f)));
+                assertEquals(1, calls.get());
+            } finally {
+                if (publisher.isAlive()) publisher.destroyForcibly().waitFor();
+                operator.shutdownNow();
+                assertTrue(operator.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    /** Revocation committed before dispatch cannot be bypassed by a fresh JVM. */
+    @Test void crossJvmRevocationFirstDeniesDocumentPublication() throws Exception {
+        Fixture f = fixture();
+        approve(f, List.of(read(), invoke()));
+        AtomicInteger calls = new AtomicInteger();
+        try (var mock = new MockModel(calls)) {
+            try (var policies = new GovernedToolResourcePolicyStore(
+                    root.resolve("journal/governed-tool-policies.sqlite"))) {
+                policies.revoke(WF, TASK, f.token());
+            }
+            Process publisher = startDocumentationChild(
+                GovernedDocumentationPublicationBarrierChild.class, f, mock.port());
+            try {
+                assertTrue(publisher.waitFor(20, java.util.concurrent.TimeUnit.SECONDS));
+                assertNotEquals(0, publisher.exitValue(), "Revoked publisher must fail closed");
+                assertEquals(0, calls.get());
+                assertFalse(Files.exists(root.resolve(".aies/generated-docs/" + WF + "-" + TASK + "-" + f.token() + ".md")));
+                try (var handoff = new ExecutionHandoffStore(
+                        root.resolve("journal/execution-handoff.sqlite"), mapper)) {
+                    assertTrue(handoff.effect(WF, TASK, f.token()).isEmpty());
+                }
+            } finally {
+                if (publisher.isAlive()) publisher.destroyForcibly().waitFor();
+            }
+        }
+    }
+
     private Process startDocumentationChild(Class<?> type, Fixture f, int port, String... extra) throws Exception {
         var command = new java.util.ArrayList<String>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
